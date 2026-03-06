@@ -1584,10 +1584,12 @@ void GameLogic()
 
 	if (*GetOptions().Gameplay.autoSaveEnabled) {
 		const int intervalFrames = std::max(1, *GetOptions().Gameplay.autoSaveIntervalSeconds) * 20;
-		autoSaveFrameCounter++;
-		if (autoSaveFrameCounter >= intervalFrames) {
-			QueueAutoSave(AutoSaveReason::Timer);
-			autoSaveFrameCounter = 0;
+		if (IsAutoSaveSafe()) {
+			autoSaveFrameCounter++;
+			if (autoSaveFrameCounter >= intervalFrames) {
+				QueueAutoSave(AutoSaveReason::Timer);
+				autoSaveFrameCounter = 0;
+			}
 		}
 	} else {
 		autoSaveFrameCounter = 0;
