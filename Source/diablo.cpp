@@ -1886,6 +1886,7 @@ bool AttemptAutoSave(AutoSaveReason reason)
 	SaveGame();
 	autoSaveCooldownUntil = currentTime + AutoSaveCooldownMilliseconds;
 	if (gbValidSaveFile) {
+		autoSaveFrameCounter = 0;
 		if (reason != AutoSaveReason::Timer)
 			InitDiabloMsg(EMSG_GAME_SAVED, currentTime + 1000 - SDL_GetTicks());
 	}
