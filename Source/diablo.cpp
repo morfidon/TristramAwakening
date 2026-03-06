@@ -200,6 +200,24 @@ int GetAutoSavePriority(AutoSaveReason reason)
 	return 0;
 }
 
+const char *GetAutoSaveReasonName(AutoSaveReason reason)
+{
+	switch (reason) {
+	case AutoSaveReason::None:
+		return "None";
+	case AutoSaveReason::Timer:
+		return "Timer";
+	case AutoSaveReason::TownEntry:
+		return "TownEntry";
+	case AutoSaveReason::BossKill:
+		return "BossKill";
+	case AutoSaveReason::UniquePickup:
+		return "UniquePickup";
+	}
+
+	return "Unknown";
+}
+
 void StartGame(interface_mode uMsg)
 {
 	CalcViewportGeometry();
@@ -1843,11 +1861,16 @@ bool IsAutoSaveSafe()
 
 void QueueAutoSave(AutoSaveReason reason)
 {
+	if (gbIsMultiplayer)
+		return;
+
 	if (!*GetOptions().Gameplay.autoSaveEnabled)
 		return;
 
-	if (GetAutoSavePriority(reason) > GetAutoSavePriority(pendingAutoSaveReason))
+	if (GetAutoSavePriority(reason) > GetAutoSavePriority(pendingAutoSaveReason)) {
 		pendingAutoSaveReason = reason;
+		LogVerbose("Autosave queued: {}", GetAutoSaveReasonName(reason));
+	}
 }
 
 bool AttemptAutoSave(AutoSaveReason reason)
