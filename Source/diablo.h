@@ -111,7 +111,7 @@ tl::expected<void, std::string> LoadGameLevel(bool firstflag, lvl_entry lvldir);
 bool IsDiabloAlive(bool playSFX);
 bool IsAutoSaveSafe();
 void QueueAutoSave(AutoSaveReason reason);
-void AttemptAutoSave(AutoSaveReason reason);
+bool AttemptAutoSave(AutoSaveReason reason);
 void PrintScreen(SDL_Keycode vkey);
 
 /**

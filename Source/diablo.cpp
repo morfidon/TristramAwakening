@@ -1595,8 +1595,8 @@ void GameLogic()
 	}
 
 	if (pendingAutoSaveReason != AutoSaveReason::None && IsAutoSaveSafe()) {
-		AttemptAutoSave(pendingAutoSaveReason);
-		pendingAutoSaveReason = AutoSaveReason::None;
+		if (AttemptAutoSave(pendingAutoSaveReason))
+			pendingAutoSaveReason = AutoSaveReason::None;
 	}
 
 	plrctrls_after_game_logic();
@@ -1848,10 +1848,10 @@ void QueueAutoSave(AutoSaveReason reason)
 		pendingAutoSaveReason = reason;
 }
 
-void AttemptAutoSave(AutoSaveReason reason)
+bool AttemptAutoSave(AutoSaveReason reason)
 {
 	if (!IsAutoSaveSafe())
-		return;
+		return false;
 
 	const EventHandler saveProc = SetEventHandler(DisableInputEventHandler);
 	const uint32_t currentTime = SDL_GetTicks();
@@ -1862,6 +1862,7 @@ void AttemptAutoSave(AutoSaveReason reason)
 			InitDiabloMsg(EMSG_GAME_SAVED, currentTime + 1000 - SDL_GetTicks());
 	}
 	SetEventHandler(saveProc);
+	return gbValidSaveFile;
 }
 
 bool CanPlayerTakeAction()
@@ -3528,7 +3529,7 @@ tl::expected<void, std::string> LoadGameLevel(bool firstflag, lvl_entry lvldir)
 	CompleteProgress();
 
 	LoadGameLevelCalculateCursor();
-	if (leveltype == DTYPE_TOWN && lvldir != ENTRY_LOAD)
+	if (leveltype == DTYPE_TOWN && lvldir != ENTRY_LOAD && !firstflag)
 		QueueAutoSave(AutoSaveReason::TownEntry);
 	return {};
 }
