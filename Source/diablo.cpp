@@ -179,6 +179,24 @@ bool was_ui_init = false;
 int autoSaveFrameCounter = 0;
 AutoSaveReason pendingAutoSaveReason = AutoSaveReason::None;
 
+int GetAutoSavePriority(AutoSaveReason reason)
+{
+	switch (reason) {
+	case AutoSaveReason::BossKill:
+		return 4;
+	case AutoSaveReason::TownEntry:
+		return 3;
+	case AutoSaveReason::UniquePickup:
+		return 2;
+	case AutoSaveReason::Timer:
+		return 1;
+	case AutoSaveReason::None:
+		return 0;
+	}
+
+	return 0;
+}
+
 void StartGame(interface_mode uMsg)
 {
 	CalcViewportGeometry();
@@ -1812,7 +1830,7 @@ void QueueAutoSave(AutoSaveReason reason)
 	if (!*GetOptions().Gameplay.autoSaveEnabled)
 		return;
 
-	if (pendingAutoSaveReason == AutoSaveReason::None)
+	if (GetAutoSavePriority(reason) > GetAutoSavePriority(pendingAutoSaveReason))
 		pendingAutoSaveReason = reason;
 }
 

@@ -181,7 +181,8 @@ void CopySaveFile(uint32_t saveNum, std::string targetPath)
 		CreateDir(targetPath.c_str());
 	}
 	for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(savePath)) {
-		CopyFileOverwrite(entry.path().string().c_str(), (targetPath + entry.path().filename().string()).c_str());
+		const std::filesystem::path targetFilePath = std::filesystem::path(targetPath) / entry.path().filename();
+		CopyFileOverwrite(entry.path().string().c_str(), targetFilePath.string().c_str());
 	}
 #else
 	CopyFileOverwrite(savePath.c_str(), targetPath.c_str());
@@ -650,7 +651,8 @@ bool pfile_write_hero_with_backup(bool writeGameData)
 	}
 	CreateDir(savePath.c_str());
 	for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(backupPath)) {
-		CopyFileOverwrite(entry.path().string().c_str(), (savePath + entry.path().filename().string()).c_str());
+		const std::filesystem::path restoredFilePath = std::filesystem::path(savePath) / entry.path().filename();
+		CopyFileOverwrite(entry.path().string().c_str(), restoredFilePath.string().c_str());
 	}
 #else
 	CopyFileOverwrite(backupPath.c_str(), savePath.c_str());
