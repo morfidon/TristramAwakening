@@ -173,6 +173,7 @@ SaveWriter GetStashWriter()
 void CopySaveFile(uint32_t saveNum, std::string targetPath)
 {
 	const std::string savePath = GetSavePath(saveNum);
+
 #if defined(UNPACKED_SAVES)
 #ifdef DVL_NO_FILESYSTEM
 #error "UNPACKED_SAVES requires either DISABLE_DEMOMODE or C++17 <filesystem>"
@@ -186,6 +187,26 @@ void CopySaveFile(uint32_t saveNum, std::string targetPath)
 	}
 #else
 	CopyFileOverwrite(savePath.c_str(), targetPath.c_str());
+#endif
+}
+
+void RestoreSaveFile(const std::string &targetPath, const std::string &backupPath)
+{
+#if defined(UNPACKED_SAVES)
+#ifdef DVL_NO_FILESYSTEM
+#error "UNPACKED_SAVES requires either DISABLE_DEMOMODE or C++17 <filesystem>"
+#endif
+	if (DirectoryExists(targetPath.c_str())) {
+		for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(targetPath))
+			RemoveFile(entry.path().string().c_str());
+	}
+	CreateDir(targetPath.c_str());
+	for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(backupPath)) {
+		const std::filesystem::path restoredFilePath = std::filesystem::path(targetPath) / entry.path().filename();
+		CopyFileOverwrite(entry.path().string().c_str(), restoredFilePath.string().c_str());
+	}
+#else
+	CopyFileOverwrite(backupPath.c_str(), targetPath.c_str());
 #endif
 }
 
@@ -644,19 +665,7 @@ bool pfile_write_hero_with_backup(bool writeGameData)
 	if (saveIsValid || !(FileExists(backupPath) || DirectoryExists(backupPath.c_str())))
 		return saveIsValid;
 
-#if defined(UNPACKED_SAVES)
-	if (DirectoryExists(savePath.c_str())) {
-		for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(savePath))
-			RemoveFile(entry.path().string().c_str());
-	}
-	CreateDir(savePath.c_str());
-	for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(backupPath)) {
-		const std::filesystem::path restoredFilePath = std::filesystem::path(savePath) / entry.path().filename();
-		CopyFileOverwrite(entry.path().string().c_str(), restoredFilePath.string().c_str());
-	}
-#else
-	CopyFileOverwrite(backupPath.c_str(), savePath.c_str());
-#endif
+	RestoreSaveFile(savePath, backupPath);
 
 	return false;
 }
@@ -694,19 +703,7 @@ bool pfile_write_stash_with_backup()
 		return stashIsValid;
 	}
 
-#if defined(UNPACKED_SAVES)
-	if (DirectoryExists(stashPath.c_str())) {
-		for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(stashPath))
-			RemoveFile(entry.path().string().c_str());
-	}
-	CreateDir(stashPath.c_str());
-	for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(backupPath)) {
-		const std::filesystem::path restoredFilePath = std::filesystem::path(stashPath) / entry.path().filename();
-		CopyFileOverwrite(entry.path().string().c_str(), restoredFilePath.string().c_str());
-	}
-#else
-	CopyFileOverwrite(backupPath.c_str(), stashPath.c_str());
-#endif
+	RestoreSaveFile(stashPath, backupPath);
 
 	return false;
 }
