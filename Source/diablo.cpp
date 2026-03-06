@@ -178,6 +178,9 @@ bool was_window_init = false;
 bool was_ui_init = false;
 int autoSaveFrameCounter = 0;
 AutoSaveReason pendingAutoSaveReason = AutoSaveReason::None;
+bool hasAutoSavePlayerAction = false;
+uint32_t autoSaveCooldownUntil = 0;
+constexpr uint32_t AutoSaveCooldownMilliseconds = 5000;
 
 int GetAutoSavePriority(AutoSaveReason reason)
 {
@@ -215,6 +218,8 @@ void StartGame(interface_mode uMsg)
 	sgnTimeoutCurs = CURSOR_NONE;
 	sgbMouseDown = CLICK_NONE;
 	LastPlayerAction = PlayerActionType::None;
+	hasAutoSavePlayerAction = false;
+	autoSaveCooldownUntil = 0;
 }
 
 void FreeGame()
@@ -1574,6 +1579,9 @@ void GameLogic()
 	RedrawViewport();
 	pfile_update(false);
 
+	if (!hasAutoSavePlayerAction && LastPlayerAction != PlayerActionType::None)
+		hasAutoSavePlayerAction = true;
+
 	if (*GetOptions().Gameplay.autoSaveEnabled) {
 		const int intervalFrames = std::max(1, *GetOptions().Gameplay.autoSaveIntervalSeconds) * 20;
 		autoSaveFrameCounter++;
@@ -1813,6 +1821,12 @@ bool IsAutoSaveSafe()
 	if (gbIsMultiplayer || !gbValidSaveFile || !gbRunGame)
 		return false;
 
+	if (!hasAutoSavePlayerAction)
+		return false;
+
+	if (!SDL_TICKS_PASSED(SDL_GetTicks(), autoSaveCooldownUntil))
+		return false;
+
 	if (movie_playing || PauseMode != 0 || gmenu_is_active() || IsPlayerInStore())
 		return false;
 
@@ -1842,8 +1856,11 @@ void AttemptAutoSave(AutoSaveReason reason)
 	const EventHandler saveProc = SetEventHandler(DisableInputEventHandler);
 	const uint32_t currentTime = SDL_GetTicks();
 	SaveGame();
-	if (gbValidSaveFile && reason != AutoSaveReason::Timer)
-		InitDiabloMsg(EMSG_GAME_SAVED, currentTime + 1000 - SDL_GetTicks());
+	if (gbValidSaveFile) {
+		autoSaveCooldownUntil = currentTime + AutoSaveCooldownMilliseconds;
+		if (reason != AutoSaveReason::Timer)
+			InitDiabloMsg(EMSG_GAME_SAVED, currentTime + 1000 - SDL_GetTicks());
+	}
 	SetEventHandler(saveProc);
 }
 
