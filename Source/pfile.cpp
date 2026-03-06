@@ -76,9 +76,9 @@ std::string GetSavePath(uint32_t saveNum, std::string_view savePrefix = {})
 	);
 }
 
-std::string GetStashSavePath()
+std::string GetStashSavePath(std::string_view savePrefix = {})
 {
-	return StrCat(paths::PrefPath(),
+	return StrCat(paths::PrefPath(), savePrefix,
 	    gbIsSpawn ? "stash_spawn" : "stash",
 #ifdef UNPACKED_SAVES
 	    gbIsHellfire ? "_hsv" DIRECTORY_SEPARATOR_STR : "_sv" DIRECTORY_SEPARATOR_STR
@@ -656,6 +656,56 @@ bool pfile_write_hero_with_backup(bool writeGameData)
 	}
 #else
 	CopyFileOverwrite(backupPath.c_str(), savePath.c_str());
+#endif
+
+	return false;
+}
+
+bool pfile_write_stash_with_backup()
+{
+	if (!Stash.dirty)
+		return true;
+
+	const std::string backupPrefix = "backup_";
+	const std::string backupPath = GetStashSavePath(backupPrefix);
+	const std::string stashPath = GetStashSavePath();
+
+	if (FileExists(stashPath) || DirectoryExists(stashPath.c_str())) {
+#if defined(UNPACKED_SAVES)
+		CreateDir(backupPath.c_str());
+		for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(stashPath)) {
+			const std::filesystem::path targetFilePath = std::filesystem::path(backupPath) / entry.path().filename();
+			CopyFileOverwrite(entry.path().string().c_str(), targetFilePath.string().c_str());
+		}
+#else
+		CopyFileOverwrite(stashPath.c_str(), backupPath.c_str());
+#endif
+	}
+
+	SaveWriter stashWriter = GetStashWriter();
+	SaveStash(stashWriter);
+
+	auto archive = OpenStashArchive();
+	const char *stashFileName = gbIsMultiplayer ? "mpstashitems" : "spstashitems";
+	const bool stashIsValid = archive && ReadArchive(*archive, stashFileName) != nullptr;
+	if (stashIsValid || !(FileExists(backupPath) || DirectoryExists(backupPath.c_str()))) {
+		if (stashIsValid)
+			Stash.dirty = false;
+		return stashIsValid;
+	}
+
+#if defined(UNPACKED_SAVES)
+	if (DirectoryExists(stashPath.c_str())) {
+		for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(stashPath))
+			RemoveFile(entry.path().string().c_str());
+	}
+	CreateDir(stashPath.c_str());
+	for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(backupPath)) {
+		const std::filesystem::path restoredFilePath = std::filesystem::path(stashPath) / entry.path().filename();
+		CopyFileOverwrite(entry.path().string().c_str(), restoredFilePath.string().c_str());
+	}
+#else
+	CopyFileOverwrite(backupPath.c_str(), stashPath.c_str());
 #endif
 
 	return false;

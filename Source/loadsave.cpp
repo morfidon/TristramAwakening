@@ -2935,7 +2935,10 @@ void SaveGame()
 		return;
 	}
 
-	sfile_write_stash();
+	if (!pfile_write_stash_with_backup()) {
+		gbValidSaveFile = false;
+		return;
+	}
 }
 
 void SaveLevel(SaveWriter &saveWriter)
