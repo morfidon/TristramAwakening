@@ -178,7 +178,8 @@ bool was_window_init = false;
 bool was_ui_init = false;
 int autoSaveFrameCounter = 0;
 AutoSaveReason pendingAutoSaveReason = AutoSaveReason::None;
-bool hasAutoSavePlayerAction = false;
+/** Prevent autosave from running immediately after session start before player interaction. */
+bool hasEnteredActiveGameplay = false;
 uint32_t autoSaveCooldownUntil = 0;
 constexpr uint32_t AutoSaveCooldownMilliseconds = 5000;
 
@@ -236,7 +237,7 @@ void StartGame(interface_mode uMsg)
 	sgnTimeoutCurs = CURSOR_NONE;
 	sgbMouseDown = CLICK_NONE;
 	LastPlayerAction = PlayerActionType::None;
-	hasAutoSavePlayerAction = false;
+	hasEnteredActiveGameplay = false;
 	autoSaveCooldownUntil = 0;
 	pendingAutoSaveReason = AutoSaveReason::None;
 	autoSaveFrameCounter = 0;
@@ -1599,8 +1600,8 @@ void GameLogic()
 	RedrawViewport();
 	pfile_update(false);
 
-	if (!hasAutoSavePlayerAction && LastPlayerAction != PlayerActionType::None)
-		hasAutoSavePlayerAction = true;
+	if (!hasEnteredActiveGameplay && LastPlayerAction != PlayerActionType::None)
+		hasEnteredActiveGameplay = true;
 
 	if (*GetOptions().Gameplay.autoSaveEnabled) {
 		const int intervalFrames = std::max(1, *GetOptions().Gameplay.autoSaveIntervalSeconds) * 20;
@@ -1843,7 +1844,7 @@ bool IsAutoSaveSafe()
 	if (gbIsMultiplayer || !gbRunGame)
 		return false;
 
-	if (!hasAutoSavePlayerAction)
+	if (!hasEnteredActiveGameplay)
 		return false;
 
 	if (!SDL_TICKS_PASSED(SDL_GetTicks(), autoSaveCooldownUntil))
