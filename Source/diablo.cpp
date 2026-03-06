@@ -3,6 +3,7 @@
  *
  * Implementation of the main game initialization functions.
  */
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <string_view>
@@ -175,6 +176,8 @@ bool was_archives_init = false;
 /** To know if surfaces have been initialized or not */
 bool was_window_init = false;
 bool was_ui_init = false;
+int autoSaveFrameCounter = 0;
+AutoSaveReason pendingAutoSaveReason = AutoSaveReason::None;
 
 void StartGame(interface_mode uMsg)
 {
@@ -1553,6 +1556,23 @@ void GameLogic()
 	RedrawViewport();
 	pfile_update(false);
 
+	if (*GetOptions().Gameplay.autoSaveEnabled) {
+		const int intervalFrames = std::max(1, *GetOptions().Gameplay.autoSaveIntervalSeconds) * 20;
+		autoSaveFrameCounter++;
+		if (autoSaveFrameCounter >= intervalFrames) {
+			QueueAutoSave(AutoSaveReason::Timer);
+			autoSaveFrameCounter = 0;
+		}
+	} else {
+		autoSaveFrameCounter = 0;
+		pendingAutoSaveReason = AutoSaveReason::None;
+	}
+
+	if (pendingAutoSaveReason != AutoSaveReason::None && IsAutoSaveSafe()) {
+		AttemptAutoSave(pendingAutoSaveReason);
+		pendingAutoSaveReason = AutoSaveReason::None;
+	}
+
 	plrctrls_after_game_logic();
 }
 
@@ -1768,6 +1788,45 @@ bool IsPlayerDead()
 bool IsGameRunning()
 {
 	return PauseMode != 2;
+}
+
+bool IsAutoSaveSafe()
+{
+	if (gbIsMultiplayer || !gbValidSaveFile || !gbRunGame)
+		return false;
+
+	if (movie_playing || PauseMode != 0 || gmenu_is_active() || IsPlayerInStore())
+		return false;
+
+	if (MyPlayer == nullptr || IsPlayerDead() || MyPlayer->_pLvlChanging || LoadingMapObjects)
+		return false;
+
+	if (qtextflag || DropGoldFlag || IsWithdrawGoldOpen || pcurs != CURSOR_HAND)
+		return false;
+
+	return true;
+}
+
+void QueueAutoSave(AutoSaveReason reason)
+{
+	if (!*GetOptions().Gameplay.autoSaveEnabled)
+		return;
+
+	if (pendingAutoSaveReason == AutoSaveReason::None)
+		pendingAutoSaveReason = reason;
+}
+
+void AttemptAutoSave(AutoSaveReason reason)
+{
+	if (!IsAutoSaveSafe())
+		return;
+
+	const EventHandler saveProc = SetEventHandler(DisableInputEventHandler);
+	const uint32_t currentTime = SDL_GetTicks();
+	SaveGame();
+	if (gbValidSaveFile && reason != AutoSaveReason::Timer)
+		InitDiabloMsg(EMSG_GAME_SAVED, currentTime + 1000 - SDL_GetTicks());
+	SetEventHandler(saveProc);
 }
 
 bool CanPlayerTakeAction()
@@ -3434,6 +3493,8 @@ tl::expected<void, std::string> LoadGameLevel(bool firstflag, lvl_entry lvldir)
 	CompleteProgress();
 
 	LoadGameLevelCalculateCursor();
+	if (leveltype == DTYPE_TOWN && lvldir != ENTRY_LOAD)
+		QueueAutoSave(AutoSaveReason::TownEntry);
 	return {};
 }
 

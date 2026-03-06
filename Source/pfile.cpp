@@ -170,7 +170,6 @@ SaveWriter GetStashWriter()
 	return SaveWriter(GetStashSavePath());
 }
 
-#ifndef DISABLE_DEMOMODE
 void CopySaveFile(uint32_t saveNum, std::string targetPath)
 {
 	const std::string savePath = GetSavePath(saveNum);
@@ -188,7 +187,6 @@ void CopySaveFile(uint32_t saveNum, std::string targetPath)
 	CopyFileOverwrite(savePath.c_str(), targetPath.c_str());
 #endif
 }
-#endif
 
 void Game2UiPlayer(const Player &player, _uiheroinfo *heroinfo, bool bHasSaveFile)
 {
@@ -627,6 +625,38 @@ void pfile_write_hero(bool writeGameData)
 {
 	SaveWriter saveWriter = GetSaveWriter(gSaveNumber);
 	pfile_write_hero(saveWriter, writeGameData);
+}
+
+bool pfile_write_hero_with_backup(bool writeGameData)
+{
+	const std::string backupPrefix = "backup_";
+	const std::string backupPath = GetSavePath(gSaveNumber, backupPrefix);
+	const std::string savePath = GetSavePath(gSaveNumber);
+
+	if (FileExists(savePath) || DirectoryExists(savePath.c_str()))
+		CopySaveFile(gSaveNumber, backupPath);
+
+	pfile_write_hero(writeGameData);
+
+	auto archive = OpenSaveArchive(gSaveNumber);
+	const bool saveIsValid = archive && ArchiveContainsGame(*archive);
+	if (saveIsValid || !(FileExists(backupPath) || DirectoryExists(backupPath.c_str())))
+		return saveIsValid;
+
+#if defined(UNPACKED_SAVES)
+	if (DirectoryExists(savePath.c_str())) {
+		for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(savePath))
+			RemoveFile(entry.path().string().c_str());
+	}
+	CreateDir(savePath.c_str());
+	for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(backupPath)) {
+		CopyFileOverwrite(entry.path().string().c_str(), (savePath + entry.path().filename().string()).c_str());
+	}
+#else
+	CopyFileOverwrite(backupPath.c_str(), savePath.c_str());
+#endif
+
+	return false;
 }
 
 #ifndef DISABLE_DEMOMODE
