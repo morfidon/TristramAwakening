@@ -1818,7 +1818,7 @@ bool IsGameRunning()
 
 bool IsAutoSaveSafe()
 {
-	if (gbIsMultiplayer || !gbValidSaveFile || !gbRunGame)
+	if (gbIsMultiplayer || !gbRunGame)
 		return false;
 
 	if (!hasAutoSavePlayerAction)
@@ -1856,8 +1856,8 @@ bool AttemptAutoSave(AutoSaveReason reason)
 	const EventHandler saveProc = SetEventHandler(DisableInputEventHandler);
 	const uint32_t currentTime = SDL_GetTicks();
 	SaveGame();
+	autoSaveCooldownUntil = currentTime + AutoSaveCooldownMilliseconds;
 	if (gbValidSaveFile) {
-		autoSaveCooldownUntil = currentTime + AutoSaveCooldownMilliseconds;
 		if (reason != AutoSaveReason::Timer)
 			InitDiabloMsg(EMSG_GAME_SAVED, currentTime + 1000 - SDL_GetTicks());
 	}
