@@ -238,6 +238,8 @@ void StartGame(interface_mode uMsg)
 	LastPlayerAction = PlayerActionType::None;
 	hasAutoSavePlayerAction = false;
 	autoSaveCooldownUntil = 0;
+	pendingAutoSaveReason = AutoSaveReason::None;
+	autoSaveFrameCounter = 0;
 }
 
 void FreeGame()
