@@ -149,6 +149,28 @@ constexpr const std::array<_monster_id, 12> SkeletonTypes {
 	MT_XSKELSD,
 };
 
+constexpr _monster_id TestFrostSkeletonType = MT_WSKELAX;
+
+bool ShouldForceTestFrostSkeleton()
+{
+	return !setlevel && currlevel == 1;
+}
+
+bool IsTestFrostSkeletonType(_monster_id type)
+{
+	return type == TestFrostSkeletonType;
+}
+
+bool IsTestFrostSkeleton(const Monster &monster)
+{
+	return ShouldForceTestFrostSkeleton() && IsTestFrostSkeletonType(monster.type().type);
+}
+
+bool IsTestFrostSkeleton(const CMonster &monsterType)
+{
+	return ShouldForceTestFrostSkeleton() && IsTestFrostSkeletonType(monsterType.type);
+}
+
 /** Maps from monster action to monster animation letter. */
 constexpr char Animletter[7] = "nwahds";
 
@@ -185,6 +207,43 @@ void InitMonsterTRN(CMonster &monst)
 		}
 
 		AnimStruct &anim = monst.anims[i];
+		if (anim.sprites->isSheet()) {
+			ClxApplyTrans(ClxSpriteSheet { anim.sprites->sheet() }, colorTranslations.data());
+		} else {
+			ClxApplyTrans(ClxSpriteList { anim.sprites->list() }, colorTranslations.data());
+		}
+	}
+}
+
+void ApplyExperimentalFrostTint(CMonster &monst)
+{
+	std::array<uint8_t, 256> colorTranslations {};
+	for (size_t i = 0; i < colorTranslations.size(); ++i) {
+		colorTranslations[i] = static_cast<uint8_t>(i);
+	}
+
+	for (int i = 96; i <= 111; ++i) {
+		colorTranslations[i] = static_cast<uint8_t>(i + 32);
+	}
+	for (int i = 112; i <= 127; ++i) {
+		colorTranslations[i] = static_cast<uint8_t>(i + 32);
+	}
+	for (int i = 128; i <= 143; ++i) {
+		colorTranslations[i] = static_cast<uint8_t>(i + 16);
+	}
+	for (int i = 144; i <= 159; ++i) {
+		colorTranslations[i] = static_cast<uint8_t>(i + 16);
+	}
+	for (int i = 160; i <= 175; ++i) {
+		colorTranslations[i] = static_cast<uint8_t>(i + 8);
+	}
+
+	const size_t numAnims = GetNumAnims(monst.data());
+	for (size_t i = 0; i < numAnims; i++) {
+		AnimStruct &anim = monst.anims[i];
+		if (!anim.sprites)
+			continue;
+
 		if (anim.sprites->isSheet()) {
 			ClxApplyTrans(ClxSpriteSheet { anim.sprites->sheet() }, colorTranslations.data());
 		} else {
@@ -294,9 +353,8 @@ void PlaceMonster(size_t i, size_t typeIndex, Point position)
 {
 	if (LevelMonsterTypes[typeIndex].type == MT_NAKRUL) {
 		for (size_t j = 0; j < ActiveMonsterCount; j++) {
-			if (Monsters[j].levelType == typeIndex) {
+			if (Monsters[j].levelType == typeIndex)
 				return;
-			}
 		}
 	}
 	Monster &monster = Monsters[i];
@@ -1243,7 +1301,7 @@ void MonsterAttackPlayer(Monster &monster, Player &player, int hit, int minDam, 
 			M_StartStand(monster, monster.direction);
 		return;
 	}
-	StartPlrHit(player, dam, false);
+	StartPlrHit(player, dam, IsTestFrostSkeleton(monster));
 	if ((monster.flags & MFLAG_KNOCKBACK) != 0) {
 		if (player._pmode != PM_GOTHIT)
 			StartPlrHit(player, 0, true);
@@ -2107,16 +2165,47 @@ void OverlordAi(Monster &monster)
 	monster.direction = md;
 	const int v = GenerateRnd(100);
 	if (monster.distanceToEnemy() >= 2) {
-		if ((monster.var2 > 20 && v < 4 * monster.intelligence + 20)
-		    || (IsMonsterModeMove(static_cast<MonsterMode>(monster.var1))
-		        && monster.var2 == 0
-		        && v < 4 * monster.intelligence + 70)) {
-			RandomWalk(monster, md);
+		if (monster.goal == MonsterGoal::Move || (monster.distanceToEnemy() >= 5 && !FlipCoin(4))) {
+			if (monster.goal != MonsterGoal::Move) {
+				monster.goalVar1 = 0;
+				monster.goalVar2 = GenerateRnd(2);
+			}
+			monster.goal = MonsterGoal::Move;
+			if (monster.goalVar1++ >= static_cast<int>(2 * monster.distanceToEnemy()) || dTransVal[monster.position.tile.x][monster.position.tile.y] != dTransVal[monster.enemyPosition.x][monster.enemyPosition.y]) {
+				monster.goal = MonsterGoal::Normal;
+			} else if (!RoundWalk(monster, md, &monster.goalVar2)) {
+				AiDelay(monster, GenerateRnd(10) + 10);
+			}
 		}
-	} else if (v < 4 * monster.intelligence + 15) {
-		StartAttack(monster);
-	} else if (v < 4 * monster.intelligence + 20) {
-		StartSpecialAttack(monster);
+	} else {
+		monster.goal = MonsterGoal::Normal;
+	}
+	if (monster.goal == MonsterGoal::Normal) {
+		if (monster.distanceToEnemy() >= 5
+		    && v < 2 * monster.intelligence + 43
+		    && LineClear([&monster](Point position) { return IsTileAvailable(monster, position); }, monster.position.tile, monster.enemyPosition)) {
+			if (AddMissile(monster.position.tile, monster.enemyPosition, md, MissileID::Rhino, TARGET_PLAYERS, monster, 0, 0) != nullptr) {
+				if (monster.data().hasSpecialSound)
+					PlayEffect(monster, MonsterSound::Special);
+				monster.occupyTile(monster.position.tile, true);
+				monster.mode = MonsterMode::Charge;
+			}
+		} else {
+			if (monster.distanceToEnemy() >= 2) {
+				v = GenerateRnd(100);
+				if (v >= 2 * monster.intelligence + 33
+				    || (IsMonsterModeMove(static_cast<MonsterMode>(monster.var1))
+				        && monster.var2 == 0
+				        && v >= 2 * monster.intelligence + 83)) {
+					AiDelay(monster, GenerateRnd(10) + 10);
+				} else {
+					RandomWalk(monster, md);
+				}
+			} else if (v < 2 * monster.intelligence + 28) {
+				monster.direction = md;
+				StartAttack(monster);
+			}
+		}
 	}
 
 	monster.checkStandAnimationIsLoaded(md);
@@ -3433,6 +3522,8 @@ void InitLevelMonsters()
 tl::expected<void, std::string> GetLevelMTypes()
 {
 	RETURN_IF_ERROR(AddMonsterType(MT_GOLEM, PLACE_SPECIAL));
+	if (ShouldForceTestFrostSkeleton())
+		RETURN_IF_ERROR(AddMonsterType(TestFrostSkeletonType, PLACE_SCATTER));
 	if (currlevel == 16) {
 		RETURN_IF_ERROR(AddMonsterType(MT_ADVOCATE, PLACE_SCATTER));
 		RETURN_IF_ERROR(AddMonsterType(MT_RBLACK, PLACE_SCATTER));
@@ -3572,6 +3663,10 @@ tl::expected<void, std::string> InitMonsterGFX(CMonster &monsterType, MonsterSpr
 
 	if (!monsterData.trnFile.empty()) {
 		InitMonsterTRN(monsterType);
+	}
+
+	if (IsTestFrostSkeleton(monsterType)) {
+		ApplyExperimentalFrostTint(monsterType);
 	}
 
 	if (IsAnyOf(mtype, MT_NMAGMA, MT_YMAGMA, MT_BMAGMA, MT_WMAGMA))
@@ -3726,8 +3821,14 @@ tl::expected<void, std::string> InitMonsters()
 		}
 		if (numscattypes > 0) {
 			while (ActiveMonsterCount < totalmonsters) {
-				const size_t typeIndex = scattertypes[GenerateRnd(numscattypes)];
-				if (currlevel == 1 || FlipCoin())
+				size_t typeIndex = scattertypes[GenerateRnd(numscattypes)];
+				const size_t testFrostSkeletonTypeIndex = GetMonsterTypeIndex(TestFrostSkeletonType);
+				if (ShouldForceTestFrostSkeleton() && testFrostSkeletonTypeIndex < LevelMonsterTypeCount && GenerateRnd(100) < 85)
+					typeIndex = testFrostSkeletonTypeIndex;
+
+				if (ShouldForceTestFrostSkeleton() && typeIndex == testFrostSkeletonTypeIndex) {
+					na = GenerateRnd(3) + 4;
+				} else if (currlevel == 1 || FlipCoin())
 					na = 1;
 				else if (currlevel == 2 || leveltype == DTYPE_CRYPT)
 					na = GenerateRnd(2) + 2;
