@@ -254,6 +254,17 @@ player_graphic GetPlayerGraphicForSpell(SpellID spellId)
 	}
 }
 
+bool IsSpellOffensiveForAutoSave(SpellID spellId)
+{
+	const SpellData &spellData = GetSpellData(spellId);
+	for (MissileID missileId : spellData.sMissiles) {
+		if (missileId != MissileID::Null)
+			return true;
+	}
+
+	return false;
+}
+
 void StartSpell(Player &player, Direction d, WorldTileCoord cx, WorldTileCoord cy)
 {
 	if (player._pInvincible && player.hasNoLife() && &player == MyPlayer) {
@@ -280,7 +291,7 @@ void StartSpell(Player &player, Direction d, WorldTileCoord cx, WorldTileCoord c
 	if (!isValid)
 		return;
 
-	if (&player == MyPlayer)
+	if (&player == MyPlayer && IsSpellOffensiveForAutoSave(player.queuedSpell.spellId))
 		MarkCombatActivity();
 
 	auto animationFlags = AnimationDistributionFlags::ProcessAnimationPending;

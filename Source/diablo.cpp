@@ -1930,6 +1930,21 @@ bool IsEnemyTooCloseForAutoSave()
 	return false;
 }
 
+int GetSecondsUntilNextAutoSave()
+{
+	if (!*GetOptions().Gameplay.autoSaveEnabled)
+		return -1;
+
+	const int intervalFrames = std::max(1, *GetOptions().Gameplay.autoSaveIntervalSeconds) * 20;
+	const int remainingFrames = std::max(0, intervalFrames - autoSaveFrameCounter);
+	return (remainingFrames + 19) / 20;
+}
+
+bool IsAutoSavePending()
+{
+	return pendingAutoSaveReason != AutoSaveReason::None;
+}
+
 void QueueAutoSave(AutoSaveReason reason)
 {
 	if (gbIsMultiplayer)
