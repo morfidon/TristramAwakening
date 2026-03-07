@@ -59,3 +59,24 @@ This document gives AI/code agents a fast operational guide for working in this 
 - Favor conservative edits.
 - Document assumptions in commit message/PR body.
 - Leave clear notes on any unverified paths (missing deps, environment constraints, etc.).
+
+## Monster implementation guardrails
+### dMonster indexing (rendering)
+- `dMonster[x][y]` stores:
+  - `0`: no monster
+  - `+(id+1)` or `-(id+1)`: monster standing/moving
+- **Never double-decrement**: `mi = std::abs(mi) - 1;` already converts to valid `Monsters[]` index.
+- **Always check MFLAG_HIDDEN**: hidden monsters must not be rendered.
+- **Never mutate global `MonstersData[mtype].trnFile`**: use `InitMonsterTRN(monsterType, trnFile)` overload instead.
+- **Keep AI changes isolated**: avoid mixing monster feature changes with unrelated AI rewrites in the same patch.
+
+### Asset pipeline
+- Always add new TRN files to `CMake/Assets.cmake` under the `devilutionx_assets` list.
+- Verify that added assets are actually copied by checking build output or generated `.vcxproj` files.
+
+### Testing after monster changes
+1. Verify correct monster appears at the tile (not previous monster in `Monsters[]` array).
+2. Confirm monster faces player and uses correct attack animations.
+3. Check that hidden monsters remain hidden.
+4. Validate that TRN/color translations apply correctly.
+5. Test AI behavior separately from rendering changes.
