@@ -1922,6 +1922,9 @@ bool IsEnemyTooCloseForAutoSave()
 		if (monster.hitPoints <= 0 || monster.mode == MonsterMode::Death || monster.mode == MonsterMode::Petrified)
 			continue;
 
+		if (monster.type().type == MT_GOLEM)
+			continue;
+
 		if ((monster.flags & MFLAG_HIDDEN) != 0)
 			continue;
 
