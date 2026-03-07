@@ -222,20 +222,32 @@ void ApplyExperimentalFrostTint(CMonster &monst)
 		colorTranslations[i] = static_cast<uint8_t>(i);
 	}
 
+	for (int i = 80; i <= 95; ++i) {
+		colorTranslations[i] = static_cast<uint8_t>(176 + ((i - 80) / 2));
+	}
 	for (int i = 96; i <= 111; ++i) {
-		colorTranslations[i] = static_cast<uint8_t>(i + 32);
+		colorTranslations[i] = static_cast<uint8_t>(184 + ((i - 96) / 2));
 	}
 	for (int i = 112; i <= 127; ++i) {
-		colorTranslations[i] = static_cast<uint8_t>(i + 32);
+		colorTranslations[i] = static_cast<uint8_t>(192 + ((i - 112) / 2));
 	}
 	for (int i = 128; i <= 143; ++i) {
-		colorTranslations[i] = static_cast<uint8_t>(i + 16);
+		colorTranslations[i] = static_cast<uint8_t>(200 + ((i - 128) / 2));
 	}
 	for (int i = 144; i <= 159; ++i) {
-		colorTranslations[i] = static_cast<uint8_t>(i + 16);
+		colorTranslations[i] = static_cast<uint8_t>(208 + ((i - 144) / 2));
 	}
 	for (int i = 160; i <= 175; ++i) {
-		colorTranslations[i] = static_cast<uint8_t>(i + 8);
+		colorTranslations[i] = static_cast<uint8_t>(216 + ((i - 160) / 2));
+	}
+	for (int i = 176; i <= 191; ++i) {
+		colorTranslations[i] = static_cast<uint8_t>(224 + ((i - 176) / 4));
+	}
+	for (int i = 192; i <= 223; ++i) {
+		colorTranslations[i] = static_cast<uint8_t>(232 + ((i - 192) / 8));
+	}
+	for (int i = 224; i <= 255; ++i) {
+		colorTranslations[i] = 239;
 	}
 
 	const size_t numAnims = GetNumAnims(monst.data());
@@ -2163,7 +2175,7 @@ void OverlordAi(Monster &monster)
 
 	const Direction md = GetMonsterDirection(monster);
 	monster.direction = md;
-	const int v = GenerateRnd(100);
+	int v = GenerateRnd(100);
 	if (monster.distanceToEnemy() >= 2) {
 		if (monster.goal == MonsterGoal::Move || (monster.distanceToEnemy() >= 5 && !FlipCoin(4))) {
 			if (monster.goal != MonsterGoal::Move) {
