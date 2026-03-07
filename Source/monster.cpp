@@ -205,7 +205,7 @@ void PulseFrostSkeletonDeathLight(Monster &monster)
 	if (monster.lightId == NO_LIGHT)
 		return;
 
-	ChangeLightRadius(monster.lightId, TestFrostSkeletonLightRadius + 2);
+	ChangeLightRadius(monster.lightId, TestFrostSkeletonLightRadius + 8);
 }
 
 void PulseFrostSkeletonLight(Monster &monster, int radius)

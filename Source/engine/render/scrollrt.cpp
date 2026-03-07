@@ -99,6 +99,7 @@ enum OutlineColors : uint8_t {
 	OutlineColorsObject = (PAL16_YELLOW + 2),
 	OutlineColorsTowner = (PAL16_BEIGE + 6),
 	OutlineColorsFrostMonster = (PAL16_BLUE + 2),
+	OutlineColorsFrostMonsterDeath = (PAL16_BLUE + 14),
 	OutlineColorsMonster = (PAL16_RED + 9),
 };
 
