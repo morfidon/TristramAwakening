@@ -3808,7 +3808,7 @@ tl::expected<void, std::string> InitMonsters()
 					typeIndex = testFrostSkeletonTypeIndex;
 
 				if (ShouldForceTestFrostSkeleton() && typeIndex == testFrostSkeletonTypeIndex) {
-					na = GenerateRnd(2) + 2;
+					na = 1;
 				} else if (currlevel == 1 || FlipCoin())
 					na = 1;
 				else if (currlevel == 2 || leveltype == DTYPE_CRYPT)
