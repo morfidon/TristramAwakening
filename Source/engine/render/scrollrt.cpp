@@ -137,12 +137,18 @@ bool IsTestFrostSkeleton(const Monster &monster)
 
 uint8_t *GetFrostSkeletonGlowTRN()
 {
+	static bool attemptedToLoadFrostSkeletonGlowTRN = false;
 	static std::optional<std::array<uint8_t, 256>> frostSkeletonGlowTRN;
-	if (!frostSkeletonGlowTRN) {
-		frostSkeletonGlowTRN.emplace();
-		LoadFileInMem(TestFrostSkeletonGlowTrn.data(), *frostSkeletonGlowTRN);
-		std::replace(frostSkeletonGlowTRN->begin(), frostSkeletonGlowTRN->end(), 255, 0);
+	if (!attemptedToLoadFrostSkeletonGlowTRN) {
+		attemptedToLoadFrostSkeletonGlowTRN = true;
+		std::array<uint8_t, 256> trn;
+		if (!LoadOptionalFileInMem(TestFrostSkeletonGlowTrn.data(), trn.data(), trn.size()))
+			return nullptr;
+		std::replace(trn.begin(), trn.end(), 255, 0);
+		frostSkeletonGlowTRN = trn;
 	}
+	if (!frostSkeletonGlowTRN)
+		return nullptr;
 	return frostSkeletonGlowTRN->data();
 }
 
@@ -791,8 +797,15 @@ void DrawMonsterHelper(const Surface &out, Point tilePosition, Point targetBuffe
 		return;
 	}
 
-	const auto &monster = Monsters[mi];
-	if ((monster.flags & MFLAG_HIDDEN) != 0) {
+	if (mi > 0) {
+		mi--;
+	}
+	Monster &monster = Monsters[mi];
+	if (!monster.animInfo.sprites) {
+		Log("Draw Monster Helper \"{}\": NULL Cel Buffer", monster.name());
+		return;
+	}
+	if (monster.mode == MonsterMode::Petrified && !IsTileLit(monster.position.old)) {
 		return;
 	}
 
@@ -804,9 +817,10 @@ void DrawMonsterHelper(const Surface &out, Point tilePosition, Point targetBuffe
 		ClxDrawOutlineSkipColorZero(out, OutlineColorsMonster, monsterRenderPosition, sprite);
 	}
 	if (IsTestFrostSkeleton(monster)) {
-		const uint8_t *glowTrn = GetFrostSkeletonGlowTRN();
-		for (Point glowOffset : FrostSkeletonGlowOffsets) {
-			ClxDrawTRN(out, monsterRenderPosition + Displacement { glowOffset.x, glowOffset.y }, sprite, const_cast<uint8_t *>(glowTrn));
+		if (uint8_t *glowTrn = GetFrostSkeletonGlowTRN()) {
+			for (Point glowOffset : FrostSkeletonGlowOffsets) {
+				ClxDrawTRN(out, monsterRenderPosition + Displacement { glowOffset.x, glowOffset.y }, sprite, glowTrn);
+			}
 		}
 	}
 	DrawMonster(out, tilePosition, monsterRenderPosition, monster, lightTableIndex);
