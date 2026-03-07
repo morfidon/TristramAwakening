@@ -800,6 +800,12 @@ void DrawMonsterHelper(const Surface &out, Point tilePosition, Point targetBuffe
 			? OutlineColorsFrostMonsterDeath
 			: monster.mode == MonsterMode::HitRecovery ? OutlineColorsFrostMonsterHit : OutlineColorsFrostMonster;
 		ClxDrawOutlineSkipColorZero(out, outlineColor, monsterRenderPosition, sprite);
+		if (monster.mode == MonsterMode::Death) {
+			ClxDrawOutlineSkipColorZero(out, outlineColor, monsterRenderPosition + Displacement { -1, 0 }, sprite);
+			ClxDrawOutlineSkipColorZero(out, outlineColor, monsterRenderPosition + Displacement { 1, 0 }, sprite);
+			ClxDrawOutlineSkipColorZero(out, outlineColor, monsterRenderPosition + Displacement { 0, -1 }, sprite);
+			ClxDrawOutlineSkipColorZero(out, outlineColor, monsterRenderPosition + Displacement { 0, 1 }, sprite);
+		}
 	}
 	DrawMonster(out, tilePosition, monsterRenderPosition, monster, lightTableIndex);
 }
