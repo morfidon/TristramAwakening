@@ -826,8 +826,11 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
 		ReleaseKey(SDLC_EventKey(event));
 		return;
 	case SDL_EVENT_MOUSE_MOTION:
-		if (ControlMode == ControlTypes::KeyboardAndMouse)
+		if (ControlMode == ControlTypes::KeyboardAndMouse) {
+			if (invflag)
+				InvalidateInventorySlot();
 			MousePosition = { SDLC_EventMotionIntX(event), SDLC_EventMotionIntY(event) };
+		}
 		gmenu_on_mouse_move();
 		return;
 	case SDL_EVENT_MOUSE_BUTTON_DOWN:

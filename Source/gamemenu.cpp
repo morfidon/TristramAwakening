@@ -106,14 +106,14 @@ void GamemenuUpdateSingle()
 
 const char *GetSaveGameMenuLabel()
 {
-	const int seconds = GetSecondsUntilNextAutoSave();
-	if (seconds < 0) {
-		saveGameMenuLabel = _("Save Game");
+	if (IsAutoSavePending()) {
+		saveGameMenuLabel = fmt::format(fmt::runtime(_("Save Game ({:s})")), _("ready"));
 		return saveGameMenuLabel.c_str();
 	}
 
-	if (seconds == 0 && IsAutoSavePending()) {
-		saveGameMenuLabel = fmt::format(fmt::runtime(_("Save Game ({:s})")), _("ready"));
+	const int seconds = GetSecondsUntilNextAutoSave();
+	if (seconds < 0) {
+		saveGameMenuLabel = _("Save Game");
 		return saveGameMenuLabel.c_str();
 	}
 

@@ -1531,6 +1531,8 @@ uint16_t GetPlayerSpriteWidth(HeroClass cls, player_graphic graphic, PlayerWeapo
 		if (weaponGraphic == PlayerWeaponGraphic::Bow)
 			return spriteData.bow;
 		return spriteData.attack;
+	case player_graphic::Block:
+		return spriteData.block;
 	case player_graphic::Hit:
 		return spriteData.swHit;
 	case player_graphic::Lightning:
