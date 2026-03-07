@@ -1,5 +1,12 @@
 # AGENTS.md
 
+## Top priority: Windows build after code changes
+- This repository is actively built on Windows.
+- After modifying code, agents should prefer the existing configured build directory at `build/vs2022-release`.
+- Build command to use from that directory: `cmake --build . --config Release`
+- If `devilutionx.exe` fails to link with `LNK1104`, first make sure the game is not currently running.
+- Do not default to Linux/macOS examples like `-j $(getconf _NPROCESSORS_ONLN)` when working in this workspace.
+
 This document gives AI/code agents a fast operational guide for working in this repository.
 
 ## Project identity
