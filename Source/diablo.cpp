@@ -1839,6 +1839,38 @@ bool IsGameRunning()
 	return PauseMode != 2;
 }
 
+bool CanPlayerTakeAction()
+{
+	return !IsPlayerDead() && IsGameRunning();
+}
+
+bool CanAutomapBeToggledOff()
+{
+	// check if every window is closed - if yes, automap can be toggled off
+	if (!QuestLogIsOpen && !IsWithdrawGoldOpen && !IsStashOpen && !CharFlag
+	    && !SpellbookFlag && !invflag && !isGameMenuOpen && !qtextflag && !SpellSelectFlag
+	    && !ChatLogFlag && !HelpFlag)
+		return true;
+
+	return false;
+}
+
+void OptionLanguageCodeChanged()
+{
+	UnloadFonts();
+	LanguageInitialize();
+	LoadLanguageArchive();
+	effects_cleanup_sfx(false);
+	if (gbRunGame)
+		sound_init();
+	else
+		ui_sound_init();
+}
+
+const auto OptionChangeHandlerLanguage = (GetOptions().Language.code.SetValueChangedCallback(OptionLanguageCodeChanged), true);
+
+} // namespace
+
 bool IsAutoSaveSafe()
 {
 	if (gbIsMultiplayer || !gbRunGame)
@@ -1893,38 +1925,6 @@ bool AttemptAutoSave(AutoSaveReason reason)
 	SetEventHandler(saveProc);
 	return gbValidSaveFile;
 }
-
-bool CanPlayerTakeAction()
-{
-	return !IsPlayerDead() && IsGameRunning();
-}
-
-bool CanAutomapBeToggledOff()
-{
-	// check if every window is closed - if yes, automap can be toggled off
-	if (!QuestLogIsOpen && !IsWithdrawGoldOpen && !IsStashOpen && !CharFlag
-	    && !SpellbookFlag && !invflag && !isGameMenuOpen && !qtextflag && !SpellSelectFlag
-	    && !ChatLogFlag && !HelpFlag)
-		return true;
-
-	return false;
-}
-
-void OptionLanguageCodeChanged()
-{
-	UnloadFonts();
-	LanguageInitialize();
-	LoadLanguageArchive();
-	effects_cleanup_sfx(false);
-	if (gbRunGame)
-		sound_init();
-	else
-		ui_sound_init();
-}
-
-const auto OptionChangeHandlerLanguage = (GetOptions().Language.code.SetValueChangedCallback(OptionLanguageCodeChanged), true);
-
-} // namespace
 
 void InitKeymapActions()
 {
@@ -3559,7 +3559,7 @@ tl::expected<void, std::string> LoadGameLevel(bool firstflag, lvl_entry lvldir)
 
 	LoadGameLevelCalculateCursor();
 	if (leveltype == DTYPE_TOWN && lvldir != ENTRY_LOAD && !firstflag)
-		QueueAutoSave(AutoSaveReason::TownEntry);
+		::devilution::QueueAutoSave(AutoSaveReason::TownEntry);
 	return {};
 }
 
