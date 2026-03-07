@@ -175,6 +175,54 @@ bool IsTestFrostSkeleton(const CMonster &monsterType)
 	return ShouldForceTestFrostSkeleton() && IsTestFrostSkeletonType(monsterType.type);
 }
 
+bool CanSpawnFrostVisualEffect()
+{
+	return !HeadlessMode;
+}
+
+void SpawnFrostHitEffect(Point position)
+{
+	if (!CanSpawnFrostVisualEffect())
+		return;
+
+	// Use ChargedBolt as a small blue hit effect - no damage, just visual
+	AddMissile(
+		position,
+		position,
+		Direction::South,
+		MissileID::ChargedBolt,
+		TARGET_PLAYERS,
+		*MyPlayer,
+		0,
+		0);
+}
+
+void SpawnFrostDeathEffect(Point position)
+{
+	if (!CanSpawnFrostVisualEffect())
+		return;
+
+	// Use BloodStarExplosion as a slightly larger blue death burst
+	AddMissile(
+		position,
+		position,
+		Direction::South,
+		MissileID::BloodStarExplosion,
+		TARGET_PLAYERS,
+		*MyPlayer,
+		0,
+		0);
+}
+
+void PulseFrostSkeletonLight(Monster &monster, int radius)
+{
+	if (monster.lightId == NO_LIGHT)
+		return;
+
+	// Temporarily increase light radius for attack pulse
+	ChangeLightRadius(monster.lightId, radius);
+}
+
 /** Maps from monster action to monster animation letter. */
 constexpr char Animletter[7] = "nwahds";
 
@@ -1280,9 +1328,15 @@ void MonsterAttackPlayer(Monster &monster, Player &player, int hit, int minDam, 
 			M_StartStand(monster, monster.direction);
 		return;
 	}
-	if (IsTestFrostSkeleton(monster))
+	
+	const bool isFrostSkeleton = IsTestFrostSkeleton(monster);
+	
+	if (isFrostSkeleton) {
 		player.pChillTicks = std::max(player.pChillTicks, FrostSkeletonChillTicks);
-	StartPlrHit(player, dam, IsTestFrostSkeleton(monster));
+		SpawnFrostHitEffect(player.position.tile);
+	}
+	
+	StartPlrHit(player, dam, isFrostSkeleton);
 	if ((monster.flags & MFLAG_KNOCKBACK) != 0) {
 		if (player._pmode != PM_GOTHIT)
 			StartPlrHit(player, 0, true);
@@ -1310,6 +1364,10 @@ void MonsterAttackEnemy(Monster &monster, int hit, int minDam, int maxDam)
 
 bool MonsterAttack(Monster &monster)
 {
+	if (IsTestFrostSkeleton(monster) && monster.animInfo.currentFrame == monster.data().animFrameNum - 2) {
+		PulseFrostSkeletonLight(monster, TestFrostSkeletonLightRadius + 1);
+	}
+	
 	if (monster.animInfo.currentFrame == monster.data().animFrameNum - 1) {
 		MonsterAttackEnemy(monster, monster.toHit(sgGameInitInfo.nDifficulty), monster.minDamage, monster.maxDamage);
 		if (monster.ai != MonsterAIID::Snake)
@@ -1328,6 +1386,9 @@ bool MonsterAttack(Monster &monster)
 	if (monster.ai == MonsterAIID::Snake && monster.animInfo.currentFrame == 0)
 		PlayEffect(monster, MonsterSound::Attack);
 	if (monster.animInfo.isLastFrame()) {
+		if (IsTestFrostSkeleton(monster)) {
+			PulseFrostSkeletonLight(monster, TestFrostSkeletonLightRadius);
+		}
 		M_StartStand(monster, monster.direction);
 		return true;
 	}
@@ -4083,6 +4144,10 @@ void MonsterDeath(Monster &monster, Direction md, bool sendmsg)
 	SetRndSeed(monster.rndItemSeed);
 
 	SpawnLoot(monster, sendmsg);
+
+	if (IsTestFrostSkeleton(monster)) {
+		SpawnFrostDeathEffect(monster.position.tile);
+	}
 
 	if (monster.type().type == MT_DIABLO)
 		DiabloDeath(monster, true);
