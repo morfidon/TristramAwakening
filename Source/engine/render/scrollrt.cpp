@@ -99,6 +99,7 @@ enum OutlineColors : uint8_t {
 	OutlineColorsObject = (PAL16_YELLOW + 2),
 	OutlineColorsTowner = (PAL16_BEIGE + 6),
 	OutlineColorsFrostMonster = (PAL16_BLUE + 2),
+	OutlineColorsFrostMonsterHit = (PAL16_BLUE + 10),
 	OutlineColorsFrostMonsterDeath = (PAL16_BLUE + 14),
 	OutlineColorsMonster = (PAL16_RED + 9),
 };
@@ -795,7 +796,10 @@ void DrawMonsterHelper(const Surface &out, Point tilePosition, Point targetBuffe
 		ClxDrawOutlineSkipColorZero(out, OutlineColorsMonster, monsterRenderPosition, sprite);
 	}
 	if (IsTestFrostSkeleton(monster)) {
-		ClxDrawOutlineSkipColorZero(out, OutlineColorsFrostMonster, monsterRenderPosition, sprite);
+		const auto outlineColor = monster.mode == MonsterMode::Death
+			? OutlineColorsFrostMonsterDeath
+			: monster.mode == MonsterMode::HitRecovery ? OutlineColorsFrostMonsterHit : OutlineColorsFrostMonster;
+		ClxDrawOutlineSkipColorZero(out, outlineColor, monsterRenderPosition, sprite);
 	}
 	DrawMonster(out, tilePosition, monsterRenderPosition, monster, lightTableIndex);
 }
