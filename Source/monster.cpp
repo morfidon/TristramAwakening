@@ -197,21 +197,15 @@ void SpawnFrostHitEffect(Point position)
 		0);
 }
 
-void SpawnFrostDeathEffect(Point position)
+void PulseFrostSkeletonDeathLight(Monster &monster)
 {
 	if (!CanSpawnFrostVisualEffect())
 		return;
 
-	// Use BloodStarExplosion as a slightly larger blue death burst
-	AddMissile(
-		position,
-		position,
-		Direction::South,
-		MissileID::BloodStarExplosion,
-		TARGET_PLAYERS,
-		*MyPlayer,
-		0,
-		0);
+	if (monster.lightId == NO_LIGHT)
+		return;
+
+	ChangeLightRadius(monster.lightId, TestFrostSkeletonLightRadius + 2);
 }
 
 void PulseFrostSkeletonLight(Monster &monster, int radius)
@@ -3710,7 +3704,6 @@ tl::expected<void, std::string> InitMonsterGFX(CMonster &monsterType, MonsterSpr
 
 	if (IsTestFrostSkeleton(monsterType)) {
 		RETURN_IF_ERROR(GetMissileSpriteData(MissileGraphicID::ChargedBolt).LoadGFX());
-		RETURN_IF_ERROR(GetMissileSpriteData(MissileGraphicID::BloodStarExplosion).LoadGFX());
 	}
 
 	if (IsAnyOf(mtype, MT_NMAGMA, MT_YMAGMA, MT_BMAGMA, MT_WMAGMA))
@@ -4151,7 +4144,7 @@ void MonsterDeath(Monster &monster, Direction md, bool sendmsg)
 	SpawnLoot(monster, sendmsg);
 
 	if (IsTestFrostSkeleton(monster)) {
-		// SpawnFrostDeathEffect(monster.position.tile); // Temporarily disabled for testing
+		PulseFrostSkeletonDeathLight(monster);
 	}
 
 	if (monster.type().type == MT_DIABLO)
