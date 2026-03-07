@@ -124,6 +124,8 @@ constexpr int NightmareToHitBonus = 85;
 constexpr int HellToHitBonus = 120;
 
 constexpr uint8_t FrostSkeletonChillTicks = 40;
+constexpr uint8_t FrostSkeletonDeathBurstChillTicks = 60;
+constexpr int FrostSkeletonDeathBurstRadius = 1;
 
 constexpr int NightmareAcBonus = 50;
 constexpr int HellAcBonus = 80;
@@ -215,6 +217,27 @@ void PulseFrostSkeletonLight(Monster &monster, int radius)
 
 	// Temporarily increase light radius for attack pulse
 	ChangeLightRadius(monster.lightId, radius);
+}
+
+void ApplyFrostSkeletonDeathBurst(Monster &monster)
+{
+	if (gbIsMultiplayer)
+		return;
+
+	for (Player &player : Players) {
+		if (!player.plractive || !player.isOnActiveLevel() || player.hasNoLife())
+			continue;
+
+		const int dx = std::abs(player.position.tile.x - monster.position.tile.x);
+		const int dy = std::abs(player.position.tile.y - monster.position.tile.y);
+		const int distance = std::max(dx, dy);
+		if (distance > FrostSkeletonDeathBurstRadius)
+			continue;
+
+		player.pChillTicks = std::max(player.pChillTicks, FrostSkeletonDeathBurstChillTicks);
+		if (&player == MyPlayer)
+			SpawnFrostHitEffect(player.position.tile);
+	}
 }
 
 /** Maps from monster action to monster animation letter. */
@@ -4145,6 +4168,7 @@ void MonsterDeath(Monster &monster, Direction md, bool sendmsg)
 
 	if (IsTestFrostSkeleton(monster)) {
 		PulseFrostSkeletonDeathLight(monster);
+		ApplyFrostSkeletonDeathBurst(monster);
 	}
 
 	if (monster.type().type == MT_DIABLO)
