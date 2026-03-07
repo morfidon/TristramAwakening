@@ -1138,13 +1138,6 @@ bool MonsterWalk(Monster &monster)
 		monster.occupyTile(monster.position.tile, false);
 		ChangeLightXY(monster.lightId, monster.position.tile);
 		M_StartStand(monster, monster.direction);
-	} else { // We didn't reach new tile so update monster's "sub-tile" position
-		if (monster.animInfo.tickCounterOfCurrentFrame == 0) {
-			monster.position.tile.x += monster.var1;
-			monster.position.tile.y += monster.var2;
-			if (IsTestFrostSkeleton(monster) && monster.lightId != NO_LIGHT)
-				ChangeLightXY(monster.lightId, monster.position.tile);
-		}
 	}
 
 	SyncLightPosition(monster);
