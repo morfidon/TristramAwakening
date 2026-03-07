@@ -3644,10 +3644,7 @@ tl::expected<void, std::string> InitMonsterGFX(CMonster &monsterType, MonsterSpr
 
 	const std::string_view trnFile = IsTestFrostSkeleton(monsterType) ? TestFrostSkeletonTrn : std::string_view { monsterData.trnFile };
 	if (!trnFile.empty()) {
-		const std::string originalTrnFile = monsterData.trnFile;
-		MonstersData[mtype].trnFile = std::string(trnFile);
-		InitMonsterTRN(monsterType);
-		MonstersData[mtype].trnFile = originalTrnFile;
+		InitMonsterTRN(monsterType, trnFile);
 	}
 
 	if (IsAnyOf(mtype, MT_NMAGMA, MT_YMAGMA, MT_BMAGMA, MT_WMAGMA))

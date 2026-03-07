@@ -770,10 +770,10 @@ void DrawMonsterHelper(const Surface &out, Point tilePosition, Point targetBuffe
 		return;
 	}
 
-	if (mi > 0) {
-		mi--;
-	}
 	Monster &monster = Monsters[mi];
+	if ((monster.flags & MFLAG_HIDDEN) != 0) {
+		return;
+	}
 	if (!monster.animInfo.sprites) {
 		Log("Draw Monster Helper \"{}\": NULL Cel Buffer", monster.name());
 		return;
