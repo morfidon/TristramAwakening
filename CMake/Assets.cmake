@@ -164,7 +164,6 @@ set(devilutionx_assets
   "lua/mods/Floating Numbers - XP/init.lua"
   lua/repl_prelude.lua
   monsters/skelaxe/frost.trn
-  monsters/skelaxe/frost_glow.trn
   plrgfx/warrior/whu/whufm.trn
   plrgfx/warrior/whu/whulm.trn
   plrgfx/warrior/whu/whuqm.trn

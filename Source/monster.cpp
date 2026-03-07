@@ -1140,8 +1140,10 @@ bool MonsterWalk(Monster &monster)
 		M_StartStand(monster, monster.direction);
 	} else { // We didn't reach new tile so update monster's "sub-tile" position
 		if (monster.animInfo.tickCounterOfCurrentFrame == 0) {
-			if (monster.animInfo.currentFrame == 0 && monster.type().type == MT_FLESTHNG)
-				PlayEffect(monster, MonsterSound::Special);
+			monster.position.tile.x += monster.var1;
+			monster.position.tile.y += monster.var2;
+			if (IsTestFrostSkeleton(monster) && monster.lightId != NO_LIGHT)
+				ChangeLightXY(monster.lightId, monster.position.tile);
 		}
 	}
 
@@ -3813,7 +3815,7 @@ tl::expected<void, std::string> InitMonsters()
 					typeIndex = testFrostSkeletonTypeIndex;
 
 				if (ShouldForceTestFrostSkeleton() && typeIndex == testFrostSkeletonTypeIndex) {
-					na = GenerateRnd(3) + 4;
+					na = GenerateRnd(2) + 2;
 				} else if (currlevel == 1 || FlipCoin())
 					na = 1;
 				else if (currlevel == 2 || leveltype == DTYPE_CRYPT)
