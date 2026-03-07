@@ -150,6 +150,7 @@ constexpr const std::array<_monster_id, 12> SkeletonTypes {
 };
 
 constexpr _monster_id TestFrostSkeletonType = MT_WSKELAX;
+constexpr std::string_view TestFrostSkeletonTrn = "skelaxe\\frost";
 
 bool ShouldForceTestFrostSkeleton()
 {
@@ -207,55 +208,6 @@ void InitMonsterTRN(CMonster &monst)
 		}
 
 		AnimStruct &anim = monst.anims[i];
-		if (anim.sprites->isSheet()) {
-			ClxApplyTrans(ClxSpriteSheet { anim.sprites->sheet() }, colorTranslations.data());
-		} else {
-			ClxApplyTrans(ClxSpriteList { anim.sprites->list() }, colorTranslations.data());
-		}
-	}
-}
-
-void ApplyExperimentalFrostTint(CMonster &monst)
-{
-	std::array<uint8_t, 256> colorTranslations {};
-	for (size_t i = 0; i < colorTranslations.size(); ++i) {
-		colorTranslations[i] = static_cast<uint8_t>(i);
-	}
-
-	for (int i = 80; i <= 95; ++i) {
-		colorTranslations[i] = static_cast<uint8_t>(176 + ((i - 80) / 2));
-	}
-	for (int i = 96; i <= 111; ++i) {
-		colorTranslations[i] = static_cast<uint8_t>(184 + ((i - 96) / 2));
-	}
-	for (int i = 112; i <= 127; ++i) {
-		colorTranslations[i] = static_cast<uint8_t>(192 + ((i - 112) / 2));
-	}
-	for (int i = 128; i <= 143; ++i) {
-		colorTranslations[i] = static_cast<uint8_t>(200 + ((i - 128) / 2));
-	}
-	for (int i = 144; i <= 159; ++i) {
-		colorTranslations[i] = static_cast<uint8_t>(208 + ((i - 144) / 2));
-	}
-	for (int i = 160; i <= 175; ++i) {
-		colorTranslations[i] = static_cast<uint8_t>(216 + ((i - 160) / 2));
-	}
-	for (int i = 176; i <= 191; ++i) {
-		colorTranslations[i] = static_cast<uint8_t>(224 + ((i - 176) / 4));
-	}
-	for (int i = 192; i <= 223; ++i) {
-		colorTranslations[i] = static_cast<uint8_t>(232 + ((i - 192) / 8));
-	}
-	for (int i = 224; i <= 255; ++i) {
-		colorTranslations[i] = 239;
-	}
-
-	const size_t numAnims = GetNumAnims(monst.data());
-	for (size_t i = 0; i < numAnims; i++) {
-		AnimStruct &anim = monst.anims[i];
-		if (!anim.sprites)
-			continue;
-
 		if (anim.sprites->isSheet()) {
 			ClxApplyTrans(ClxSpriteSheet { anim.sprites->sheet() }, colorTranslations.data());
 		} else {
@@ -3673,12 +3625,12 @@ tl::expected<void, std::string> InitMonsterGFX(CMonster &monsterType, MonsterSpr
 		++j;
 	}
 
-	if (!monsterData.trnFile.empty()) {
+	const std::string_view trnFile = IsTestFrostSkeleton(monsterType) ? TestFrostSkeletonTrn : std::string_view { monsterData.trnFile };
+	if (!trnFile.empty()) {
+		const std::string originalTrnFile = monsterData.trnFile;
+		MonstersData[mtype].trnFile = std::string(trnFile);
 		InitMonsterTRN(monsterType);
-	}
-
-	if (IsTestFrostSkeleton(monsterType)) {
-		ApplyExperimentalFrostTint(monsterType);
+		MonstersData[mtype].trnFile = originalTrnFile;
 	}
 
 	if (IsAnyOf(mtype, MT_NMAGMA, MT_YMAGMA, MT_BMAGMA, MT_WMAGMA))
