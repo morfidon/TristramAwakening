@@ -76,6 +76,8 @@ struct DirectionSettings {
 	PLR_MODE walkMode;
 };
 
+constexpr uint8_t PlayerChillWalkTicksPerFrame = 2;
+
 void UpdatePlayerLightOffset(Player &player)
 {
 	if (player.lightId == NO_LIGHT)
@@ -2250,6 +2252,8 @@ void NewPlrAnim(Player &player, player_graphic graphic, Direction dir, Animation
 	int8_t numberOfFrames;
 	int8_t ticksPerFrame;
 	player.getAnimationFramesAndTicksPerFrame(graphic, numberOfFrames, ticksPerFrame);
+	if (graphic == player_graphic::Walk && player.pChillTicks != 0)
+		ticksPerFrame = std::max<int8_t>(ticksPerFrame, PlayerChillWalkTicksPerFrame);
 	player.AnimInfo.setNewAnimation(sprites, numberOfFrames, ticksPerFrame, flags, numSkippedFrames, distributeFramesBeforeFrame, static_cast<uint8_t>(previewShownGameTickFragments));
 }
 
@@ -2384,6 +2388,7 @@ void CreatePlayer(Player &player, HeroClass c)
 	player._pLvlChanging = false;
 	player.pTownWarps = 0;
 	player.pLvlLoad = 0;
+	player.pChillTicks = 0;
 	player.pManaShield = false;
 	player.pDamAcFlags = ItemSpecialEffectHf::None;
 	player.wReflections = 0;
@@ -3013,6 +3018,11 @@ void ProcessPlayers()
 
 	if (myPlayer.pLvlLoad > 0) {
 		myPlayer.pLvlLoad--;
+	}
+
+	for (Player &player : Players) {
+		if (player.plractive && player.pChillTicks != 0)
+			player.pChillTicks--;
 	}
 
 	if (sfxdelay > 0) {

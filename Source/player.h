@@ -355,6 +355,7 @@ public:
 	uint8_t pTownWarps;
 	uint8_t pDungMsgs;
 	uint8_t pLvlLoad;
+	uint8_t pChillTicks;
 	bool pManaShield;
 	uint8_t pDungMsgs2;
 	bool pOriginalCathedral;

@@ -123,6 +123,8 @@ namespace {
 constexpr int NightmareToHitBonus = 85;
 constexpr int HellToHitBonus = 120;
 
+constexpr uint8_t FrostSkeletonChillTicks = 40;
+
 constexpr int NightmareAcBonus = 50;
 constexpr int HellAcBonus = 80;
 
@@ -151,6 +153,7 @@ constexpr const std::array<_monster_id, 12> SkeletonTypes {
 
 constexpr _monster_id TestFrostSkeletonType = MT_WSKELAX;
 constexpr std::string_view TestFrostSkeletonTrn = "skelaxe\\frost";
+constexpr int TestFrostSkeletonLightRadius = 3;
 
 bool ShouldForceTestFrostSkeleton()
 {
@@ -193,10 +196,17 @@ size_t GetNumAnimsWithGraphics(const MonsterData &monsterData)
 	return result;
 }
 
+} // namespace
+
 void InitMonsterTRN(CMonster &monst)
 {
+	InitMonsterTRN(monst, monst.data().trnFile);
+}
+
+void InitMonsterTRN(CMonster &monst, std::string_view trnFile)
+{
 	char path[64];
-	*BufCopy(path, "monsters\\", monst.data().trnFile, ".trn") = '\0';
+	*BufCopy(path, "monsters\\", trnFile, ".trn") = '\0';
 	std::array<uint8_t, 256> colorTranslations;
 	LoadFileInMem(path, colorTranslations);
 	std::replace(colorTranslations.begin(), colorTranslations.end(), 255, 0);
@@ -215,6 +225,8 @@ void InitMonsterTRN(CMonster &monst)
 		}
 	}
 }
+
+namespace {
 
 void InitMonster(Monster &monster, Direction rd, size_t typeIndex, Point position)
 {
@@ -248,6 +260,8 @@ void InitMonster(Monster &monster, Direction rd, size_t typeIndex, Point positio
 	monster.uniqueType = UniqueMonsterType::None;
 	monster.activeForTicks = 0;
 	monster.lightId = NO_LIGHT;
+	if (IsTestFrostSkeleton(monster))
+		monster.lightId = AddLight(position, TestFrostSkeletonLightRadius);
 	monster.rndItemSeed = AdvanceRndSeed();
 	monster.aiSeed = AdvanceRndSeed();
 	monster.whoHit = 0;
@@ -1265,6 +1279,8 @@ void MonsterAttackPlayer(Monster &monster, Player &player, int hit, int minDam, 
 			M_StartStand(monster, monster.direction);
 		return;
 	}
+	if (IsTestFrostSkeleton(monster))
+		player.pChillTicks = std::max(player.pChillTicks, FrostSkeletonChillTicks);
 	StartPlrHit(player, dam, IsTestFrostSkeleton(monster));
 	if ((monster.flags & MFLAG_KNOCKBACK) != 0) {
 		if (player._pmode != PM_GOTHIT)
@@ -3363,6 +3379,9 @@ tl::expected<size_t, std::string> AddMonsterType(_monster_id type, placeflag pla
 
 		RETURN_IF_ERROR(InitMonsterSND(monsterType));
 	}
+
+	if (IsTestFrostSkeleton(monsterType))
+		InitMonsterTRN(monsterType, TestFrostSkeletonTrn);
 
 	monsterType.placeFlags |= placeflag;
 	return typeIndex;

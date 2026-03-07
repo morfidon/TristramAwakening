@@ -5,9 +5,11 @@
  */
 #include "engine/render/scrollrt.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 
 #ifdef USE_SDL3
 #include <SDL3/SDL_keyboard.h>
@@ -30,6 +32,7 @@
 #include "engine/backbuffer_state.hpp"
 #include "engine/displacement.hpp"
 #include "engine/dx.h"
+#include "engine/load_file.hpp"
 #include "engine/point.hpp"
 #include "engine/render/clx_render.hpp"
 #include "engine/render/dun_render.hpp"
@@ -51,6 +54,7 @@
 #include "lua/lua_event.hpp"
 #include "minitext.h"
 #include "missiles.h"
+#include "monster.h"
 #include "nthread.h"
 #include "options.h"
 #include "panels/charpanel.hpp"
@@ -107,6 +111,40 @@ bool frameflag;
 namespace {
 
 constexpr auto RightFrameDisplacement = Displacement { DunFrameWidth, 0 };
+
+constexpr _monster_id TestFrostSkeletonType = MT_WSKELAX;
+constexpr std::string_view TestFrostSkeletonGlowTrn = "monsters\\skelaxe\\frost_glow.trn";
+constexpr std::array<Point, 8> FrostSkeletonGlowOffsets {
+	Point { -1, 0 },
+	Point { 1, 0 },
+	Point { 0, -1 },
+	Point { 0, 1 },
+	Point { -1, -1 },
+	Point { 1, -1 },
+	Point { -1, 1 },
+	Point { 1, 1 },
+};
+
+bool ShouldForceTestFrostSkeleton()
+{
+	return !setlevel && currlevel == 1;
+}
+
+bool IsTestFrostSkeleton(const Monster &monster)
+{
+	return ShouldForceTestFrostSkeleton() && monster.type().type == TestFrostSkeletonType;
+}
+
+uint8_t *GetFrostSkeletonGlowTRN()
+{
+	static std::optional<std::array<uint8_t, 256>> frostSkeletonGlowTRN;
+	if (!frostSkeletonGlowTRN) {
+		frostSkeletonGlowTRN.emplace();
+		LoadFileInMem(TestFrostSkeletonGlowTrn.data(), *frostSkeletonGlowTRN);
+		std::replace(frostSkeletonGlowTRN->begin(), frostSkeletonGlowTRN->end(), 255, 0);
+	}
+	return frostSkeletonGlowTRN->data();
+}
 
 [[nodiscard]] DVL_ALWAYS_INLINE bool IsFloor(Point tilePosition)
 {
@@ -764,6 +802,12 @@ void DrawMonsterHelper(const Surface &out, Point tilePosition, Point targetBuffe
 	const Point monsterRenderPosition = targetBufferPosition + offset;
 	if (mi == pcursmonst) {
 		ClxDrawOutlineSkipColorZero(out, OutlineColorsMonster, monsterRenderPosition, sprite);
+	}
+	if (IsTestFrostSkeleton(monster)) {
+		const uint8_t *glowTrn = GetFrostSkeletonGlowTRN();
+		for (Point glowOffset : FrostSkeletonGlowOffsets) {
+			ClxDrawTRN(out, monsterRenderPosition + Displacement { glowOffset.x, glowOffset.y }, sprite, const_cast<uint8_t *>(glowTrn));
+		}
 	}
 	DrawMonster(out, tilePosition, monsterRenderPosition, monster, lightTableIndex);
 }

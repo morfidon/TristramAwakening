@@ -11,6 +11,7 @@
 #include <array>
 #include <functional>
 #include <string>
+#include <string_view>
 
 #include <expected.hpp>
 #include <function_ref.hpp>
@@ -529,6 +530,12 @@ void InitializeSpawnedMonster(Point position, Direction dir, size_t typeIndex, s
 void AddDoppelganger(Monster &monster);
 void ApplyMonsterDamage(DamageType damageType, Monster &monster, int damage);
 void MonsterReducePlayerAttribute(Monster &monster, Player &player);
+bool IsMonsterLeader(const Monster &monster);
+void DeleteMonsterList();
+void InitMonsterTRN(CMonster &monst);
+void InitMonsterTRN(CMonster &monst, std::string_view trnFile);
+void SetMapMonsters(std::optional<std::vector<std::vector<uint16_t>>> mapMonsters);
+void DeleteMonster(Monster &monster);
 bool M_Talker(const Monster &monster);
 void M_StartStand(Monster &monster, Direction md);
 void M_ClearSquares(const Monster &monster);
