@@ -181,7 +181,10 @@ AutoSaveReason pendingAutoSaveReason = AutoSaveReason::None;
 /** Prevent autosave from running immediately after session start before player interaction. */
 bool hasEnteredActiveGameplay = false;
 uint32_t autoSaveCooldownUntil = 0;
+uint32_t autoSaveCombatCooldownUntil = 0;
 constexpr uint32_t AutoSaveCooldownMilliseconds = 5000;
+constexpr uint32_t AutoSaveCombatCooldownMilliseconds = 4000;
+constexpr int AutoSaveEnemyProximityTiles = 6;
 
 int GetAutoSavePriority(AutoSaveReason reason)
 {
@@ -239,6 +242,7 @@ void StartGame(interface_mode uMsg)
 	LastPlayerAction = PlayerActionType::None;
 	hasEnteredActiveGameplay = false;
 	autoSaveCooldownUntil = 0;
+	autoSaveCombatCooldownUntil = 0;
 	pendingAutoSaveReason = AutoSaveReason::None;
 	autoSaveFrameCounter = 0;
 }
@@ -822,9 +826,8 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
 		ReleaseKey(SDLC_EventKey(event));
 		return;
 	case SDL_EVENT_MOUSE_MOTION:
-		if (ControlMode == ControlTypes::KeyboardAndMouse && invflag)
-			InvalidateInventorySlot();
-		MousePosition = { SDLC_EventMotionIntX(event), SDLC_EventMotionIntY(event) };
+		if (ControlMode == ControlTypes::KeyboardAndMouse)
+			MousePosition = { SDLC_EventMotionIntX(event), SDLC_EventMotionIntY(event) };
 		gmenu_on_mouse_move();
 		return;
 	case SDL_EVENT_MOUSE_BUTTON_DOWN:
@@ -1605,12 +1608,10 @@ void GameLogic()
 
 	if (*GetOptions().Gameplay.autoSaveEnabled) {
 		const int intervalFrames = std::max(1, *GetOptions().Gameplay.autoSaveIntervalSeconds) * 20;
-		if (IsAutoSaveSafe()) {
-			autoSaveFrameCounter++;
-			if (autoSaveFrameCounter >= intervalFrames) {
-				QueueAutoSave(AutoSaveReason::Timer);
-				autoSaveFrameCounter = 0;
-			}
+		autoSaveFrameCounter++;
+		if (autoSaveFrameCounter >= intervalFrames) {
+			QueueAutoSave(AutoSaveReason::Timer);
+			autoSaveFrameCounter = 0;
 		}
 	} else {
 		autoSaveFrameCounter = 0;
@@ -1882,6 +1883,9 @@ bool IsAutoSaveSafe()
 	if (!SDL_TICKS_PASSED(SDL_GetTicks(), autoSaveCooldownUntil))
 		return false;
 
+	if (!SDL_TICKS_PASSED(SDL_GetTicks(), autoSaveCombatCooldownUntil))
+		return false;
+
 	if (movie_playing || PauseMode != 0 || gmenu_is_active() || IsPlayerInStore())
 		return false;
 
@@ -1891,7 +1895,39 @@ bool IsAutoSaveSafe()
 	if (qtextflag || DropGoldFlag || IsWithdrawGoldOpen || pcurs != CURSOR_HAND)
 		return false;
 
+	if (leveltype != DTYPE_TOWN && IsEnemyTooCloseForAutoSave())
+		return false;
+
 	return true;
+}
+
+void MarkCombatActivity()
+{
+	autoSaveCombatCooldownUntil = SDL_GetTicks() + AutoSaveCombatCooldownMilliseconds;
+}
+
+bool IsEnemyTooCloseForAutoSave()
+{
+	if (MyPlayer == nullptr)
+		return false;
+
+	const Point playerPosition = MyPlayer->position.tile;
+	for (size_t i = 0; i < ActiveMonsterCount; i++) {
+		const Monster &monster = Monsters[ActiveMonsters[i]];
+		if (monster.hitPoints <= 0 || monster.mode == MonsterMode::Death || monster.mode == MonsterMode::Petrified)
+			continue;
+
+		if ((monster.flags & MFLAG_HIDDEN) != 0)
+			continue;
+
+		const int distance = std::max(
+		    std::abs(monster.position.tile.x - playerPosition.x),
+		    std::abs(monster.position.tile.y - playerPosition.y));
+		if (distance <= AutoSaveEnemyProximityTiles)
+			return true;
+	}
+
+	return false;
 }
 
 void QueueAutoSave(AutoSaveReason reason)

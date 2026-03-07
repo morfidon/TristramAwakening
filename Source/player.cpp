@@ -24,6 +24,7 @@
 #ifdef _DEBUG
 #include "debug.h"
 #endif
+#include "diablo.h"
 #include "engine/backbuffer_state.hpp"
 #include "engine/load_cl2.hpp"
 #include "engine/load_file.hpp"
@@ -179,6 +180,9 @@ void StartAttack(Player &player, Direction d, bool includesFirstFrame)
 		return;
 	}
 
+	if (&player == MyPlayer && IsAnyOf(LastPlayerAction, PlayerActionType::AttackMonsterTarget, PlayerActionType::AttackPlayerTarget))
+		MarkCombatActivity();
+
 	int8_t skippedAnimationFrames = 0;
 	const auto flags = player._pIFlags;
 
@@ -199,6 +203,7 @@ void StartAttack(Player &player, Direction d, bool includesFirstFrame)
 	if (player._pmode == PM_ATTACK)
 		animationFlags = static_cast<AnimationDistributionFlags>(animationFlags | AnimationDistributionFlags::RepeatedAction);
 	NewPlrAnim(player, player_graphic::Attack, d, animationFlags, skippedAnimationFrames, player._pAFNum);
+
 	player._pmode = PM_ATTACK;
 	FixPlayerLocation(player, d);
 	SetPlayerOld(player);
@@ -210,6 +215,9 @@ void StartRangeAttack(Player &player, Direction d, WorldTileCoord cx, WorldTileC
 		SyncPlrKill(player, DeathReason::Unknown);
 		return;
 	}
+
+	if (&player == MyPlayer)
+		MarkCombatActivity();
 
 	int8_t skippedAnimationFrames = 0;
 	const auto flags = player._pIFlags;
@@ -271,6 +279,9 @@ void StartSpell(Player &player, Direction d, WorldTileCoord cx, WorldTileCoord c
 	}
 	if (!isValid)
 		return;
+
+	if (&player == MyPlayer)
+		MarkCombatActivity();
 
 	auto animationFlags = AnimationDistributionFlags::ProcessAnimationPending;
 	if (player._pmode == PM_SPELL)
@@ -761,6 +772,8 @@ bool PlrHitPlr(Player &attacker, Player &target)
 	if (&attacker == MyPlayer) {
 		NetSendCmdDamage(true, target, skdam, DamageType::Physical);
 	}
+	if (&attacker == MyPlayer && skdam > 0)
+		MarkCombatActivity();
 	StartPlrHit(target, skdam, false);
 
 	return true;
@@ -1509,8 +1522,6 @@ uint16_t GetPlayerSpriteWidth(HeroClass cls, player_graphic graphic, PlayerWeapo
 		return spriteData.attack;
 	case player_graphic::Hit:
 		return spriteData.swHit;
-	case player_graphic::Block:
-		return spriteData.block;
 	case player_graphic::Lightning:
 		return spriteData.lightning;
 	case player_graphic::Fire:
@@ -2823,6 +2834,8 @@ void StripTopGold(Player &player)
 void ApplyPlrDamage(DamageType damageType, Player &player, int dam, int minHP /*= 0*/, int frac /*= 0*/, DeathReason deathReason /*= DeathReason::MonsterOrTrap*/)
 {
 	int totalDamage = (dam << 6) + frac;
+	if (&player == MyPlayer && totalDamage > 0)
+		MarkCombatActivity();
 	if (&player == MyPlayer && !player.hasNoLife()) {
 		lua::OnPlayerTakeDamage(&player, totalDamage, static_cast<int>(damageType));
 	}
