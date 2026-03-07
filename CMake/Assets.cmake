@@ -163,6 +163,7 @@ set(devilutionx_assets
   "lua/mods/Floating Numbers - Damage/init.lua"
   "lua/mods/Floating Numbers - XP/init.lua"
   lua/repl_prelude.lua
+  monsters/skelaxe/frost.trn
   plrgfx/warrior/whu/whufm.trn
   plrgfx/warrior/whu/whulm.trn
   plrgfx/warrior/whu/whuqm.trn
