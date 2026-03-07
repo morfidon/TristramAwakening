@@ -4151,7 +4151,7 @@ void MonsterDeath(Monster &monster, Direction md, bool sendmsg)
 	SpawnLoot(monster, sendmsg);
 
 	if (IsTestFrostSkeleton(monster)) {
-		SpawnFrostDeathEffect(monster.position.tile);
+		// SpawnFrostDeathEffect(monster.position.tile); // Temporarily disabled for testing
 	}
 
 	if (monster.type().type == MT_DIABLO)
