@@ -176,7 +176,7 @@ bool was_archives_init = false;
 /** To know if surfaces have been initialized or not */
 bool was_window_init = false;
 bool was_ui_init = false;
-int autoSaveFrameCounter = 0;
+uint32_t autoSaveNextTimerDueAt = 0;
 AutoSaveReason pendingAutoSaveReason = AutoSaveReason::None;
 /** Prevent autosave from running immediately after session start before player interaction. */
 bool hasEnteredActiveGameplay = false;
@@ -185,6 +185,11 @@ uint32_t autoSaveCombatCooldownUntil = 0;
 constexpr uint32_t AutoSaveCooldownMilliseconds = 5000;
 constexpr uint32_t AutoSaveCombatCooldownMilliseconds = 4000;
 constexpr int AutoSaveEnemyProximityTiles = 6;
+
+uint32_t GetAutoSaveIntervalMilliseconds()
+{
+	return static_cast<uint32_t>(std::max(1, *GetOptions().Gameplay.autoSaveIntervalSeconds)) * 1000;
+}
 
 int GetAutoSavePriority(AutoSaveReason reason)
 {
@@ -244,7 +249,7 @@ void StartGame(interface_mode uMsg)
 	autoSaveCooldownUntil = 0;
 	autoSaveCombatCooldownUntil = 0;
 	pendingAutoSaveReason = AutoSaveReason::None;
-	autoSaveFrameCounter = 0;
+	autoSaveNextTimerDueAt = SDL_GetTicks() + GetAutoSaveIntervalMilliseconds();
 }
 
 void FreeGame()
@@ -1610,20 +1615,20 @@ void GameLogic()
 		hasEnteredActiveGameplay = true;
 
 	if (*GetOptions().Gameplay.autoSaveEnabled) {
-		const int intervalFrames = std::max(1, *GetOptions().Gameplay.autoSaveIntervalSeconds) * 20;
-		autoSaveFrameCounter++;
-		if (autoSaveFrameCounter >= intervalFrames) {
+		const uint32_t now = SDL_GetTicks();
+		if (SDL_TICKS_PASSED(now, autoSaveNextTimerDueAt)) {
 			QueueAutoSave(AutoSaveReason::Timer);
-			autoSaveFrameCounter = 0;
 		}
 	} else {
-		autoSaveFrameCounter = 0;
+		autoSaveNextTimerDueAt = SDL_GetTicks() + GetAutoSaveIntervalMilliseconds();
 		pendingAutoSaveReason = AutoSaveReason::None;
 	}
 
 	if (pendingAutoSaveReason != AutoSaveReason::None && IsAutoSaveSafe()) {
-		if (AttemptAutoSave(pendingAutoSaveReason))
+		if (AttemptAutoSave(pendingAutoSaveReason)) {
 			pendingAutoSaveReason = AutoSaveReason::None;
+			autoSaveNextTimerDueAt = SDL_GetTicks() + GetAutoSaveIntervalMilliseconds();
+		}
 	}
 
 	plrctrls_after_game_logic();
@@ -1943,9 +1948,15 @@ int GetSecondsUntilNextAutoSave()
 	if (!*GetOptions().Gameplay.autoSaveEnabled)
 		return -1;
 
-	const int intervalFrames = std::max(1, *GetOptions().Gameplay.autoSaveIntervalSeconds) * 20;
-	const int remainingFrames = std::max(0, intervalFrames - autoSaveFrameCounter);
-	return (remainingFrames + 19) / 20;
+	if (IsAutoSavePending())
+		return 0;
+
+	const uint32_t now = SDL_GetTicks();
+	if (SDL_TICKS_PASSED(now, autoSaveNextTimerDueAt))
+		return 0;
+
+	const uint32_t remainingMilliseconds = autoSaveNextTimerDueAt - now;
+	return static_cast<int>((remainingMilliseconds + 999) / 1000);
 }
 
 bool IsAutoSavePending()
@@ -1977,7 +1988,7 @@ bool AttemptAutoSave(AutoSaveReason reason)
 	SaveGame();
 	autoSaveCooldownUntil = currentTime + AutoSaveCooldownMilliseconds;
 	if (gbValidSaveFile) {
-		autoSaveFrameCounter = 0;
+		autoSaveNextTimerDueAt = SDL_GetTicks() + GetAutoSaveIntervalMilliseconds();
 		if (reason != AutoSaveReason::Timer)
 			InitDiabloMsg(EMSG_GAME_SAVED, currentTime + 1000 - SDL_GetTicks());
 	}
