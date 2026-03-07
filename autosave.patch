@@ -1,0 +1,822 @@
+diff --git a/Source/diablo.cpp b/Source/diablo.cpp
+index b14da41cb..cfca7ea35 100644
+--- a/Source/diablo.cpp
++++ b/Source/diablo.cpp
+@@ -3,6 +3,7 @@
+  *
+  * Implementation of the main game initialization functions.
+  */
++#include <algorithm>
+ #include <array>
+ #include <cstdint>
+ #include <string_view>
+@@ -175,6 +176,56 @@ bool was_archives_init = false;
+ /** To know if surfaces have been initialized or not */
+ bool was_window_init = false;
+ bool was_ui_init = false;
++uint32_t autoSaveNextTimerDueAt = 0;
++AutoSaveReason pendingAutoSaveReason = AutoSaveReason::None;
++/** Prevent autosave from running immediately after session start before player interaction. */
++bool hasEnteredActiveGameplay = false;
++uint32_t autoSaveCooldownUntil = 0;
++uint32_t autoSaveCombatCooldownUntil = 0;
++constexpr uint32_t AutoSaveCooldownMilliseconds = 5000;
++constexpr uint32_t AutoSaveCombatCooldownMilliseconds = 4000;
++constexpr int AutoSaveEnemyProximityTiles = 6;
++
++uint32_t GetAutoSaveIntervalMilliseconds()
++{
++	return static_cast<uint32_t>(std::max(1, *GetOptions().Gameplay.autoSaveIntervalSeconds)) * 1000;
++}
++
++int GetAutoSavePriority(AutoSaveReason reason)
++{
++	switch (reason) {
++	case AutoSaveReason::BossKill:
++		return 4;
++	case AutoSaveReason::TownEntry:
++		return 3;
++	case AutoSaveReason::UniquePickup:
++		return 2;
++	case AutoSaveReason::Timer:
++		return 1;
++	case AutoSaveReason::None:
++		return 0;
++	}
++
++	return 0;
++}
++
++const char *GetAutoSaveReasonName(AutoSaveReason reason)
++{
++	switch (reason) {
++	case AutoSaveReason::None:
++		return "None";
++	case AutoSaveReason::Timer:
++		return "Timer";
++	case AutoSaveReason::TownEntry:
++		return "TownEntry";
++	case AutoSaveReason::BossKill:
++		return "BossKill";
++	case AutoSaveReason::UniquePickup:
++		return "UniquePickup";
++	}
++
++	return "Unknown";
++}
+ 
+ void StartGame(interface_mode uMsg)
+ {
+@@ -194,6 +245,11 @@ void StartGame(interface_mode uMsg)
+ 	sgnTimeoutCurs = CURSOR_NONE;
+ 	sgbMouseDown = CLICK_NONE;
+ 	LastPlayerAction = PlayerActionType::None;
++	hasEnteredActiveGameplay = false;
++	autoSaveCooldownUntil = 0;
++	autoSaveCombatCooldownUntil = 0;
++	pendingAutoSaveReason = AutoSaveReason::None;
++	autoSaveNextTimerDueAt = SDL_GetTicks() + GetAutoSaveIntervalMilliseconds();
+ }
+ 
+ void FreeGame()
+@@ -775,9 +831,11 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
+ 		ReleaseKey(SDLC_EventKey(event));
+ 		return;
+ 	case SDL_EVENT_MOUSE_MOTION:
+-		if (ControlMode == ControlTypes::KeyboardAndMouse && invflag)
+-			InvalidateInventorySlot();
+-		MousePosition = { SDLC_EventMotionIntX(event), SDLC_EventMotionIntY(event) };
++		if (ControlMode == ControlTypes::KeyboardAndMouse) {
++			if (invflag)
++				InvalidateInventorySlot();
++			MousePosition = { SDLC_EventMotionIntX(event), SDLC_EventMotionIntY(event) };
++		}
+ 		gmenu_on_mouse_move();
+ 		return;
+ 	case SDL_EVENT_MOUSE_BUTTON_DOWN:
+@@ -1553,6 +1611,26 @@ void GameLogic()
+ 	RedrawViewport();
+ 	pfile_update(false);
+ 
++	if (!hasEnteredActiveGameplay && LastPlayerAction != PlayerActionType::None)
++		hasEnteredActiveGameplay = true;
++
++	if (*GetOptions().Gameplay.autoSaveEnabled) {
++		const uint32_t now = SDL_GetTicks();
++		if (SDL_TICKS_PASSED(now, autoSaveNextTimerDueAt)) {
++			QueueAutoSave(AutoSaveReason::Timer);
++		}
++	} else {
++		autoSaveNextTimerDueAt = SDL_GetTicks() + GetAutoSaveIntervalMilliseconds();
++		pendingAutoSaveReason = AutoSaveReason::None;
++	}
++
++	if (pendingAutoSaveReason != AutoSaveReason::None && IsAutoSaveSafe()) {
++		if (AttemptAutoSave(pendingAutoSaveReason)) {
++			pendingAutoSaveReason = AutoSaveReason::None;
++			autoSaveNextTimerDueAt = SDL_GetTicks() + GetAutoSaveIntervalMilliseconds();
++		}
++	}
++
+ 	plrctrls_after_game_logic();
+ }
+ 
+@@ -1802,6 +1880,122 @@ const auto OptionChangeHandlerLanguage = (GetOptions().Language.code.SetValueCha
+ 
+ } // namespace
+ 
++bool IsEnemyTooCloseForAutoSave();
++
++bool IsAutoSaveSafe()
++{
++	if (gbIsMultiplayer || !gbRunGame)
++		return false;
++
++	if (!hasEnteredActiveGameplay)
++		return false;
++
++	if (!SDL_TICKS_PASSED(SDL_GetTicks(), autoSaveCooldownUntil))
++		return false;
++
++	if (!SDL_TICKS_PASSED(SDL_GetTicks(), autoSaveCombatCooldownUntil))
++		return false;
++
++	if (movie_playing || PauseMode != 0 || gmenu_is_active() || IsPlayerInStore())
++		return false;
++
++	if (MyPlayer == nullptr || IsPlayerDead() || MyPlayer->_pLvlChanging || LoadingMapObjects)
++		return false;
++
++	if (qtextflag || DropGoldFlag || IsWithdrawGoldOpen || pcurs != CURSOR_HAND)
++		return false;
++
++	if (leveltype != DTYPE_TOWN && IsEnemyTooCloseForAutoSave())
++		return false;
++
++	return true;
++}
++
++void MarkCombatActivity()
++{
++	autoSaveCombatCooldownUntil = SDL_GetTicks() + AutoSaveCombatCooldownMilliseconds;
++}
++
++bool IsEnemyTooCloseForAutoSave()
++{
++	if (MyPlayer == nullptr)
++		return false;
++
++	const Point playerPosition = MyPlayer->position.tile;
++	for (size_t i = 0; i < ActiveMonsterCount; i++) {
++		const Monster &monster = Monsters[ActiveMonsters[i]];
++		if (monster.hitPoints <= 0 || monster.mode == MonsterMode::Death || monster.mode == MonsterMode::Petrified)
++			continue;
++
++		if (monster.type().type == MT_GOLEM)
++			continue;
++
++		if ((monster.flags & MFLAG_HIDDEN) != 0)
++			continue;
++
++		const int distance = std::max(
++		    std::abs(monster.position.tile.x - playerPosition.x),
++		    std::abs(monster.position.tile.y - playerPosition.y));
++		if (distance <= AutoSaveEnemyProximityTiles)
++			return true;
++	}
++
++	return false;
++}
++
++int GetSecondsUntilNextAutoSave()
++{
++	if (!*GetOptions().Gameplay.autoSaveEnabled)
++		return -1;
++
++	if (IsAutoSavePending())
++		return 0;
++
++	const uint32_t now = SDL_GetTicks();
++	if (SDL_TICKS_PASSED(now, autoSaveNextTimerDueAt))
++		return 0;
++
++	const uint32_t remainingMilliseconds = autoSaveNextTimerDueAt - now;
++	return static_cast<int>((remainingMilliseconds + 999) / 1000);
++}
++
++bool IsAutoSavePending()
++{
++	return pendingAutoSaveReason != AutoSaveReason::None;
++}
++
++void QueueAutoSave(AutoSaveReason reason)
++{
++	if (gbIsMultiplayer)
++		return;
++
++	if (!*GetOptions().Gameplay.autoSaveEnabled)
++		return;
++
++	if (GetAutoSavePriority(reason) > GetAutoSavePriority(pendingAutoSaveReason)) {
++		pendingAutoSaveReason = reason;
++		LogVerbose("Autosave queued: {}", GetAutoSaveReasonName(reason));
++	}
++}
++
++bool AttemptAutoSave(AutoSaveReason reason)
++{
++	if (!IsAutoSaveSafe())
++		return false;
++
++	const EventHandler saveProc = SetEventHandler(DisableInputEventHandler);
++	const uint32_t currentTime = SDL_GetTicks();
++	SaveGame();
++	autoSaveCooldownUntil = currentTime + AutoSaveCooldownMilliseconds;
++	if (gbValidSaveFile) {
++		autoSaveNextTimerDueAt = SDL_GetTicks() + GetAutoSaveIntervalMilliseconds();
++		if (reason != AutoSaveReason::Timer)
++			InitDiabloMsg(EMSG_GAME_SAVED, currentTime + 1000 - SDL_GetTicks());
++	}
++	SetEventHandler(saveProc);
++	return gbValidSaveFile;
++}
++
+ void InitKeymapActions()
+ {
+ 	Options &options = GetOptions();
+@@ -3434,6 +3628,8 @@ tl::expected<void, std::string> LoadGameLevel(bool firstflag, lvl_entry lvldir)
+ 	CompleteProgress();
+ 
+ 	LoadGameLevelCalculateCursor();
++	if (leveltype == DTYPE_TOWN && lvldir != ENTRY_LOAD && !firstflag)
++		::devilution::QueueAutoSave(AutoSaveReason::TownEntry);
+ 	return {};
+ }
+ 
+diff --git a/Source/diablo.h b/Source/diablo.h
+index ad28ebb82..539211a61 100644
+--- a/Source/diablo.h
++++ b/Source/diablo.h
+@@ -68,6 +68,14 @@ enum class PlayerActionType : uint8_t {
+ 	OperateObject,
+ };
+ 
++enum class AutoSaveReason : uint8_t {
++	None,
++	Timer,
++	TownEntry,
++	BossKill,
++	UniquePickup,
++};
++
+ extern uint32_t DungeonSeeds[NUMLEVELS];
+ extern DVL_API_FOR_TEST std::optional<uint32_t> LevelSeeds[NUMLEVELS];
+ extern Point MousePosition;
+@@ -101,6 +109,12 @@ bool PressEscKey();
+ void DisableInputEventHandler(const SDL_Event &event, uint16_t modState);
+ tl::expected<void, std::string> LoadGameLevel(bool firstflag, lvl_entry lvldir);
+ bool IsDiabloAlive(bool playSFX);
++void MarkCombatActivity();
++bool IsAutoSaveSafe();
++int GetSecondsUntilNextAutoSave();
++bool IsAutoSavePending();
++void QueueAutoSave(AutoSaveReason reason);
++bool AttemptAutoSave(AutoSaveReason reason);
+ void PrintScreen(SDL_Keycode vkey);
+ 
+ /**
+diff --git a/Source/gamemenu.cpp b/Source/gamemenu.cpp
+index f1f997c75..64ba95eaf 100644
+--- a/Source/gamemenu.cpp
++++ b/Source/gamemenu.cpp
+@@ -5,11 +5,15 @@
+  */
+ #include "gamemenu.h"
+ 
++#include <fmt/format.h>
++#include <string>
++
+ #ifdef USE_SDL3
+ #include <SDL3/SDL_timer.h>
+ #endif
+ 
+ #include "cursor.h"
++#include "diablo.h"
+ #include "diablo_msg.hpp"
+ #include "engine/backbuffer_state.hpp"
+ #include "engine/demomode.h"
+@@ -89,6 +93,8 @@ const char *const SoundToggleNames[] = {
+ 	N_("Sound Disabled"),
+ };
+ 
++std::string saveGameMenuLabel;
++
+ void GamemenuUpdateSingle()
+ {
+ 	sgSingleMenu[2].setEnabled(gbValidSaveFile);
+@@ -98,6 +104,23 @@ void GamemenuUpdateSingle()
+ 	sgSingleMenu[0].setEnabled(enable);
+ }
+ 
++const char *GetSaveGameMenuLabel()
++{
++	if (IsAutoSavePending()) {
++		saveGameMenuLabel = fmt::format(fmt::runtime(_("Save Game ({:s})")), _("ready"));
++		return saveGameMenuLabel.c_str();
++	}
++
++	const int seconds = GetSecondsUntilNextAutoSave();
++	if (seconds < 0) {
++		saveGameMenuLabel = _("Save Game");
++		return saveGameMenuLabel.c_str();
++	}
++
++	saveGameMenuLabel = fmt::format(fmt::runtime(_("Save Game ({:d})")), seconds);
++	return saveGameMenuLabel.c_str();
++}
++
+ void GamemenuPrevious(bool /*bActivate*/)
+ {
+ 	gamemenu_on();
+@@ -363,6 +386,14 @@ void gamemenu_save_game(bool /*bActivate*/)
+ 	SetEventHandler(saveProc);
+ }
+ 
++std::string_view GetGamemenuText(const TMenuItem &menuItem)
++{
++	if (menuItem.fnMenu == &gamemenu_save_game)
++		return GetSaveGameMenuLabel();
++
++	return _(menuItem.pszStr);
++}
++
+ void gamemenu_on()
+ {
+ 	isGameMenuOpen = true;
+diff --git a/Source/gamemenu.h b/Source/gamemenu.h
+index 1b6abd731..1024e5db6 100644
+--- a/Source/gamemenu.h
++++ b/Source/gamemenu.h
+@@ -5,8 +5,12 @@
+  */
+ #pragma once
+ 
++#include <string_view>
++
+ namespace devilution {
+ 
++struct TMenuItem;
++
+ void gamemenu_on();
+ void gamemenu_off();
+ void gamemenu_handle_previous();
+@@ -14,6 +18,7 @@ void gamemenu_exit_game(bool bActivate);
+ void gamemenu_quit_game(bool bActivate);
+ void gamemenu_load_game(bool bActivate);
+ void gamemenu_save_game(bool bActivate);
++std::string_view GetGamemenuText(const TMenuItem &menuItem);
+ 
+ extern bool isGameMenuOpen;
+ 
+diff --git a/Source/gmenu.cpp b/Source/gmenu.cpp
+index 6e1c5230d..df1c026a5 100644
+--- a/Source/gmenu.cpp
++++ b/Source/gmenu.cpp
+@@ -29,6 +29,7 @@
+ #include "engine/render/clx_render.hpp"
+ #include "engine/render/primitive_render.hpp"
+ #include "engine/render/text_render.hpp"
++#include "gamemenu.h"
+ #include "headless_mode.hpp"
+ #include "options.h"
+ #include "stores.h"
+@@ -123,11 +124,12 @@ int GmenuGetLineWidth(TMenuItem *pItem)
+ 	if (pItem->isSlider())
+ 		return SliderItemWidth;
+ 
+-	return GetLineWidth(_(pItem->pszStr), GameFont46, 2);
++	return GetLineWidth(GetGamemenuText(*pItem), GameFont46, 2);
+ }
+ 
+ void GmenuDrawMenuItem(const Surface &out, TMenuItem *pItem, int y)
+ {
++	const std::string_view menuText = GetGamemenuText(*pItem);
+ 	const int w = GmenuGetLineWidth(pItem);
+ 	if (pItem->isSlider()) {
+ 		const int uiPositionX = GetUIRectangle().position.x;
+@@ -142,7 +144,7 @@ void GmenuDrawMenuItem(const Surface &out, TMenuItem *pItem, int y)
+ 
+ 	const int x = (gnScreenWidth - w) / 2;
+ 	const UiFlags style = pItem->enabled() ? UiFlags::ColorGold : UiFlags::ColorBlack;
+-	DrawString(out, _(pItem->pszStr), Point { x, y },
++	DrawString(out, menuText, Point { x, y },
+ 	    { .flags = style | UiFlags::FontSize46, .spacing = 2 });
+ 	if (pItem == sgpCurrItem) {
+ 		const ClxSprite sprite = (*PentSpin_cel)[PentSpn2Spin()];
+diff --git a/Source/inv.cpp b/Source/inv.cpp
+index fc97994c9..528f670db 100644
+--- a/Source/inv.cpp
++++ b/Source/inv.cpp
+@@ -22,6 +22,7 @@
+ #include "controls/control_mode.hpp"
+ #include "controls/plrctrls.h"
+ #include "cursor.h"
++#include "diablo.h"
+ #include "engine/backbuffer_state.hpp"
+ #include "engine/clx_sprite.hpp"
+ #include "engine/load_cel.hpp"
+@@ -1691,10 +1692,14 @@ void InvGetItem(Player &player, int ii)
+ 		NewCursor(player.HoldItem);
+ 	}
+ 
+-	// This potentially moves items in memory so must be done after we've made a copy
+-	CleanupItems(ii);
+-	pcursitem = -1;
+-}
++	const bool pickedUniqueItem = &player == MyPlayer && item._iMagical == ITEM_QUALITY_UNIQUE;
++
++	// This potentially moves items in memory so must be done after we've made a copy
++	CleanupItems(ii);
++	if (pickedUniqueItem)
++		QueueAutoSave(AutoSaveReason::UniquePickup);
++	pcursitem = -1;
++}
+ 
+ std::optional<Point> FindAdjacentPositionForItem(Point origin, Direction facing)
+ {
+@@ -1771,9 +1776,12 @@ void AutoGetItem(Player &player, Item *itemPointer, int ii)
+ 			PlaySFX(SfxID::GrabItem);
+ 		}
+ 
+-		CleanupItems(ii);
+-		return;
+-	}
++		const bool pickedUniqueItem = &player == MyPlayer && item._iMagical == ITEM_QUALITY_UNIQUE;
++		CleanupItems(ii);
++		if (pickedUniqueItem)
++			QueueAutoSave(AutoSaveReason::UniquePickup);
++		return;
++	}
+ 
+ 	if (&player == MyPlayer) {
+ 		player.Say(HeroSpeech::ICantCarryAnymore);
+diff --git a/Source/loadsave.cpp b/Source/loadsave.cpp
+index 010658713..30b10c72b 100644
+--- a/Source/loadsave.cpp
++++ b/Source/loadsave.cpp
+@@ -2926,12 +2926,20 @@ void SaveGameData(SaveWriter &saveWriter)
+ 	SaveLevelSeeds(saveWriter);
+ }
+ 
+-void SaveGame()
+-{
+-	gbValidSaveFile = true;
+-	pfile_write_hero(/*writeGameData=*/true);
+-	sfile_write_stash();
+-}
++void SaveGame()
++{
++	gbValidSaveFile = true;
++	const bool heroSaved = pfile_write_hero_with_backup(/*writeGameData=*/true);
++	if (!heroSaved) {
++		gbValidSaveFile = false;
++		return;
++	}
++
++	if (!pfile_write_stash_with_backup()) {
++		gbValidSaveFile = false;
++		return;
++	}
++}
+ 
+ void SaveLevel(SaveWriter &saveWriter)
+ {
+diff --git a/Source/monster.cpp b/Source/monster.cpp
+index e8905a23d..0463e6581 100644
+--- a/Source/monster.cpp
++++ b/Source/monster.cpp
+@@ -4024,8 +4024,10 @@ void MonsterDeath(Monster &monster, Direction md, bool sendmsg)
+ 	monster.position.future = monster.position.old;
+ 	M_ClearSquares(monster);
+ 	monster.occupyTile(monster.position.tile, false);
+-	CheckQuestKill(monster, sendmsg);
+-	M_FallenFear(monster.position.tile);
++	CheckQuestKill(monster, sendmsg);
++	if (!gbIsMultiplayer && IsAnyOf(monster.type().type, MT_CLEAVER, MT_SKING, MT_DIABLO, MT_DEFILER, MT_NAKRUL))
++		QueueAutoSave(AutoSaveReason::BossKill);
++	M_FallenFear(monster.position.tile);
+ 	if (IsAnyOf(monster.type().type, MT_NACID, MT_RACID, MT_BACID, MT_XACID, MT_SPIDLORD))
+ 		AddMissile(monster.position.tile, { 0, 0 }, Direction::South, MissileID::AcidPuddle, TARGET_PLAYERS, monster, monster.intelligence + 1, 0);
+ }
+diff --git a/Source/options.cpp b/Source/options.cpp
+index 52e2730ed..ca249b2ba 100644
+--- a/Source/options.cpp
++++ b/Source/options.cpp
+@@ -865,6 +865,8 @@ GameplayOptions::GameplayOptions()
+     , autoRefillBelt("Auto Refill Belt", OptionEntryFlags::None, N_("Auto Refill Belt"), N_("Refill belt from inventory when belt item is consumed."), false)
+     , disableCripplingShrines("Disable Crippling Shrines", OptionEntryFlags::None, N_("Disable Crippling Shrines"), N_("When enabled Cauldrons, Fascinating Shrines, Goat Shrines, Ornate Shrines, Sacred Shrines and Murphy's Shrines are not able to be clicked on and labeled as disabled."), false)
+     , quickCast("Quick Cast", OptionEntryFlags::None, N_("Quick Cast"), N_("Spell hotkeys instantly cast the spell, rather than switching the readied spell."), false)
++    , autoSaveEnabled("Auto Save", OptionEntryFlags::CantChangeInMultiPlayer, N_("Auto Save"), N_("Autosave works only in single player and only at safe moments."), false)
++    , autoSaveIntervalSeconds("Auto Save Interval", OptionEntryFlags::CantChangeInMultiPlayer, N_("Autosave interval (seconds)"), N_("Time between periodic autosave attempts."), 120, { 30, 60, 90, 120, 180, 300, 600 })
+     , numHealPotionPickup("Heal Potion Pickup", OptionEntryFlags::None, N_("Heal Potion Pickup"), N_("Number of Healing potions to pick up automatically."), 0, { 0, 1, 2, 4, 8, 16 })
+     , numFullHealPotionPickup("Full Heal Potion Pickup", OptionEntryFlags::None, N_("Full Heal Potion Pickup"), N_("Number of Full Healing potions to pick up automatically."), 0, { 0, 1, 2, 4, 8, 16 })
+     , numManaPotionPickup("Mana Potion Pickup", OptionEntryFlags::None, N_("Mana Potion Pickup"), N_("Number of Mana potions to pick up automatically."), 0, { 0, 1, 2, 4, 8, 16 })
+@@ -886,6 +888,8 @@ std::vector<OptionEntryBase *> GameplayOptions::GetEntries()
+ 		&cowQuest,
+ 		&runInTown,
+ 		&quickCast,
++		&autoSaveEnabled,
++		&autoSaveIntervalSeconds,
+ 		&testBard,
+ 		&testBarbarian,
+ 		&experienceBar,
+diff --git a/Source/options.h b/Source/options.h
+index 58954f55f..41e00dbf0 100644
+--- a/Source/options.h
++++ b/Source/options.h
+@@ -623,6 +623,10 @@ struct GameplayOptions : OptionCategoryBase {
+ 	OptionEntryBoolean disableCripplingShrines;
+ 	/** @brief Spell hotkeys instantly cast the spell. */
+ 	OptionEntryBoolean quickCast;
++	/** @brief Enable periodic and event-driven automatic save in single player. */
++	OptionEntryBoolean autoSaveEnabled;
++	/** @brief Time in seconds between automatic save attempts. */
++	OptionEntryInt<int> autoSaveIntervalSeconds;
+ 	/** @brief Number of Healing potions to pick up automatically */
+ 	OptionEntryInt<int> numHealPotionPickup;
+ 	/** @brief Number of Full Healing potions to pick up automatically */
+diff --git a/Source/pfile.cpp b/Source/pfile.cpp
+index ec96c6608..4d3af3006 100644
+--- a/Source/pfile.cpp
++++ b/Source/pfile.cpp
+@@ -76,12 +76,12 @@ std::string GetSavePath(uint32_t saveNum, std::string_view savePrefix = {})
+ 	);
+ }
+ 
+-std::string GetStashSavePath()
+-{
+-	return StrCat(paths::PrefPath(),
+-	    gbIsSpawn ? "stash_spawn" : "stash",
+-#ifdef UNPACKED_SAVES
+-	    gbIsHellfire ? "_hsv" DIRECTORY_SEPARATOR_STR : "_sv" DIRECTORY_SEPARATOR_STR
++std::string GetStashSavePath(std::string_view savePrefix = {})
++{
++	return StrCat(paths::PrefPath(), savePrefix,
++	    gbIsSpawn ? "stash_spawn" : "stash",
++#ifdef UNPACKED_SAVES
++	    gbIsHellfire ? "_hsv" DIRECTORY_SEPARATOR_STR : "_sv" DIRECTORY_SEPARATOR_STR
+ #else
+ 	    gbIsHellfire ? ".hsv" : ".sv"
+ #endif
+@@ -170,25 +170,45 @@ SaveWriter GetStashWriter()
+ 	return SaveWriter(GetStashSavePath());
+ }
+ 
+-#ifndef DISABLE_DEMOMODE
+-void CopySaveFile(uint32_t saveNum, std::string targetPath)
+-{
+-	const std::string savePath = GetSavePath(saveNum);
+-#if defined(UNPACKED_SAVES)
+-#ifdef DVL_NO_FILESYSTEM
+-#error "UNPACKED_SAVES requires either DISABLE_DEMOMODE or C++17 <filesystem>"
+-#endif
+-	if (!targetPath.empty()) {
+-		CreateDir(targetPath.c_str());
+-	}
+-	for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(savePath)) {
+-		CopyFileOverwrite(entry.path().string().c_str(), (targetPath + entry.path().filename().string()).c_str());
+-	}
+-#else
+-	CopyFileOverwrite(savePath.c_str(), targetPath.c_str());
+-#endif
+-}
+-#endif
++void CopySaveFile(uint32_t saveNum, std::string targetPath)
++{
++	const std::string savePath = GetSavePath(saveNum);
++
++#if defined(UNPACKED_SAVES)
++#ifdef DVL_NO_FILESYSTEM
++#error "UNPACKED_SAVES requires either DISABLE_DEMOMODE or C++17 <filesystem>"
++#endif
++	if (!targetPath.empty()) {
++		CreateDir(targetPath.c_str());
++	}
++	for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(savePath)) {
++		const std::filesystem::path targetFilePath = std::filesystem::path(targetPath) / entry.path().filename();
++		CopyFileOverwrite(entry.path().string().c_str(), targetFilePath.string().c_str());
++	}
++#else
++	CopyFileOverwrite(savePath.c_str(), targetPath.c_str());
++#endif
++}
++
++void RestoreSaveFile(const std::string &targetPath, const std::string &backupPath)
++{
++#if defined(UNPACKED_SAVES)
++#ifdef DVL_NO_FILESYSTEM
++#error "UNPACKED_SAVES requires either DISABLE_DEMOMODE or C++17 <filesystem>"
++#endif
++	if (DirectoryExists(targetPath.c_str())) {
++		for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(targetPath))
++			RemoveFile(entry.path().string().c_str());
++	}
++	CreateDir(targetPath.c_str());
++	for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(backupPath)) {
++		const std::filesystem::path restoredFilePath = std::filesystem::path(targetPath) / entry.path().filename();
++		CopyFileOverwrite(entry.path().string().c_str(), restoredFilePath.string().c_str());
++	}
++#else
++	CopyFileOverwrite(backupPath.c_str(), targetPath.c_str());
++#endif
++}
+ 
+ void Game2UiPlayer(const Player &player, _uiheroinfo *heroinfo, bool bHasSaveFile)
+ {
+@@ -629,6 +649,65 @@ void pfile_write_hero(bool writeGameData)
+ 	pfile_write_hero(saveWriter, writeGameData);
+ }
+ 
++bool pfile_write_hero_with_backup(bool writeGameData)
++{
++	const std::string backupPrefix = "backup_";
++	const std::string backupPath = GetSavePath(gSaveNumber, backupPrefix);
++	const std::string savePath = GetSavePath(gSaveNumber);
++
++	if (FileExists(savePath) || DirectoryExists(savePath.c_str()))
++		CopySaveFile(gSaveNumber, backupPath);
++
++	pfile_write_hero(writeGameData);
++
++	auto archive = OpenSaveArchive(gSaveNumber);
++	const bool saveIsValid = archive && ArchiveContainsGame(*archive);
++	if (saveIsValid || !(FileExists(backupPath) || DirectoryExists(backupPath.c_str())))
++		return saveIsValid;
++
++	RestoreSaveFile(savePath, backupPath);
++
++	return false;
++}
++
++bool pfile_write_stash_with_backup()
++{
++	if (!Stash.dirty)
++		return true;
++
++	const std::string backupPrefix = "backup_";
++	const std::string backupPath = GetStashSavePath(backupPrefix);
++	const std::string stashPath = GetStashSavePath();
++
++	if (FileExists(stashPath) || DirectoryExists(stashPath.c_str())) {
++#if defined(UNPACKED_SAVES)
++		CreateDir(backupPath.c_str());
++		for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(stashPath)) {
++			const std::filesystem::path targetFilePath = std::filesystem::path(backupPath) / entry.path().filename();
++			CopyFileOverwrite(entry.path().string().c_str(), targetFilePath.string().c_str());
++		}
++#else
++		CopyFileOverwrite(stashPath.c_str(), backupPath.c_str());
++#endif
++	}
++
++	SaveWriter stashWriter = GetStashWriter();
++	SaveStash(stashWriter);
++
++	auto archive = OpenStashArchive();
++	const char *stashFileName = gbIsMultiplayer ? "mpstashitems" : "spstashitems";
++	const bool stashIsValid = archive && ReadArchive(*archive, stashFileName) != nullptr;
++	if (stashIsValid || !(FileExists(backupPath) || DirectoryExists(backupPath.c_str()))) {
++		if (stashIsValid)
++			Stash.dirty = false;
++		return stashIsValid;
++	}
++
++	RestoreSaveFile(stashPath, backupPath);
++
++	return false;
++}
++
+ #ifndef DISABLE_DEMOMODE
+ void pfile_write_hero_demo(int demo)
+ {
+diff --git a/Source/pfile.h b/Source/pfile.h
+index df10fca08..2e1b54f7c 100644
+--- a/Source/pfile.h
++++ b/Source/pfile.h
+@@ -101,6 +101,8 @@ std::optional<SaveReader> OpenStashArchive();
+ const char *pfile_get_password();
+ std::unique_ptr<std::byte[]> ReadArchive(SaveReader &archive, const char *pszName, size_t *pdwLen = nullptr);
+ void pfile_write_hero(bool writeGameData = false);
++bool pfile_write_hero_with_backup(bool writeGameData = false);
++bool pfile_write_stash_with_backup();
+ 
+ #ifndef DISABLE_DEMOMODE
+ /**
+@@ -117,7 +119,7 @@ void pfile_write_hero_demo(int demo);
+ HeroCompareResult pfile_compare_hero_demo(int demo, bool logDetails);
+ #endif
+ 
+-void sfile_write_stash();
++void sfile_write_stash();
+ bool pfile_ui_set_hero_infos(bool (*uiAddHeroInfo)(_uiheroinfo *));
+ void pfile_ui_set_class_stats(HeroClass playerClass, _uidefaultstats *classStats);
+ uint32_t pfile_ui_get_first_unused_save_num();
+diff --git a/Source/player.cpp b/Source/player.cpp
+index 1b6f14096..4c3d95e42 100644
+--- a/Source/player.cpp
++++ b/Source/player.cpp
+@@ -24,6 +24,7 @@
+ #ifdef _DEBUG
+ #include "debug.h"
+ #endif
++#include "diablo.h"
+ #include "engine/backbuffer_state.hpp"
+ #include "engine/load_cl2.hpp"
+ #include "engine/load_file.hpp"
+@@ -179,6 +180,9 @@ void StartAttack(Player &player, Direction d, bool includesFirstFrame)
+ 		return;
+ 	}
+ 
++	if (&player == MyPlayer && IsAnyOf(LastPlayerAction, PlayerActionType::AttackMonsterTarget, PlayerActionType::AttackPlayerTarget))
++		MarkCombatActivity();
++
+ 	int8_t skippedAnimationFrames = 0;
+ 	const auto flags = player._pIFlags;
+ 
+@@ -199,6 +203,7 @@ void StartAttack(Player &player, Direction d, bool includesFirstFrame)
+ 	if (player._pmode == PM_ATTACK)
+ 		animationFlags = static_cast<AnimationDistributionFlags>(animationFlags | AnimationDistributionFlags::RepeatedAction);
+ 	NewPlrAnim(player, player_graphic::Attack, d, animationFlags, skippedAnimationFrames, player._pAFNum);
++
+ 	player._pmode = PM_ATTACK;
+ 	FixPlayerLocation(player, d);
+ 	SetPlayerOld(player);
+@@ -211,6 +216,9 @@ void StartRangeAttack(Player &player, Direction d, WorldTileCoord cx, WorldTileC
+ 		return;
+ 	}
+ 
++	if (&player == MyPlayer)
++		MarkCombatActivity();
++
+ 	int8_t skippedAnimationFrames = 0;
+ 	const auto flags = player._pIFlags;
+ 
+@@ -246,6 +254,17 @@ player_graphic GetPlayerGraphicForSpell(SpellID spellId)
+ 	}
+ }
+ 
++bool IsSpellOffensiveForAutoSave(SpellID spellId)
++{
++	const SpellData &spellData = GetSpellData(spellId);
++	for (MissileID missileId : spellData.sMissiles) {
++		if (missileId != MissileID::Null)
++			return true;
++	}
++
++	return false;
++}
++
+ void StartSpell(Player &player, Direction d, WorldTileCoord cx, WorldTileCoord cy)
+ {
+ 	if (player._pInvincible && player.hasNoLife() && &player == MyPlayer) {
+@@ -272,6 +291,9 @@ void StartSpell(Player &player, Direction d, WorldTileCoord cx, WorldTileCoord c
+ 	if (!isValid)
+ 		return;
+ 
++	if (&player == MyPlayer && IsSpellOffensiveForAutoSave(player.queuedSpell.spellId))
++		MarkCombatActivity();
++
+ 	auto animationFlags = AnimationDistributionFlags::ProcessAnimationPending;
+ 	if (player._pmode == PM_SPELL)
+ 		animationFlags = static_cast<AnimationDistributionFlags>(animationFlags | AnimationDistributionFlags::RepeatedAction);
+@@ -761,6 +783,8 @@ bool PlrHitPlr(Player &attacker, Player &target)
+ 	if (&attacker == MyPlayer) {
+ 		NetSendCmdDamage(true, target, skdam, DamageType::Physical);
+ 	}
++	if (&attacker == MyPlayer && skdam > 0)
++		MarkCombatActivity();
+ 	StartPlrHit(target, skdam, false);
+ 
+ 	return true;
+@@ -1507,10 +1531,10 @@ uint16_t GetPlayerSpriteWidth(HeroClass cls, player_graphic graphic, PlayerWeapo
+ 		if (weaponGraphic == PlayerWeaponGraphic::Bow)
+ 			return spriteData.bow;
+ 		return spriteData.attack;
+-	case player_graphic::Hit:
+-		return spriteData.swHit;
+ 	case player_graphic::Block:
+ 		return spriteData.block;
++	case player_graphic::Hit:
++		return spriteData.swHit;
+ 	case player_graphic::Lightning:
+ 		return spriteData.lightning;
+ 	case player_graphic::Fire:
+@@ -2823,6 +2847,8 @@ void StripTopGold(Player &player)
+ void ApplyPlrDamage(DamageType damageType, Player &player, int dam, int minHP /*= 0*/, int frac /*= 0*/, DeathReason deathReason /*= DeathReason::MonsterOrTrap*/)
+ {
+ 	int totalDamage = (dam << 6) + frac;
++	if (&player == MyPlayer && totalDamage > 0)
++		MarkCombatActivity();
+ 	if (&player == MyPlayer && !player.hasNoLife()) {
+ 		lua::OnPlayerTakeDamage(&player, totalDamage, static_cast<int>(damageType));
+ 	}
