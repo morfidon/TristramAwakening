@@ -98,6 +98,7 @@ enum OutlineColors : uint8_t {
 	OutlineColorsPlayer4 = (PAL16_BLUE + 7),
 	OutlineColorsObject = (PAL16_YELLOW + 2),
 	OutlineColorsTowner = (PAL16_BEIGE + 6),
+	OutlineColorsFrostMonster = (PAL16_BLUE + 15),
 	OutlineColorsMonster = (PAL16_RED + 9),
 };
 
@@ -113,17 +114,6 @@ namespace {
 constexpr auto RightFrameDisplacement = Displacement { DunFrameWidth, 0 };
 
 constexpr _monster_id TestFrostSkeletonType = MT_WSKELAX;
-constexpr std::string_view TestFrostSkeletonGlowTrn = "monsters\\skelaxe\\frost_glow.trn";
-constexpr std::array<Point, 8> FrostSkeletonGlowOffsets {
-	Point { -1, 0 },
-	Point { 1, 0 },
-	Point { 0, -1 },
-	Point { 0, 1 },
-	Point { -1, -1 },
-	Point { 1, -1 },
-	Point { -1, 1 },
-	Point { 1, 1 },
-};
 
 bool ShouldForceTestFrostSkeleton()
 {
@@ -133,23 +123,6 @@ bool ShouldForceTestFrostSkeleton()
 bool IsTestFrostSkeleton(const Monster &monster)
 {
 	return ShouldForceTestFrostSkeleton() && monster.type().type == TestFrostSkeletonType;
-}
-
-uint8_t *GetFrostSkeletonGlowTRN()
-{
-	static bool attemptedToLoadFrostSkeletonGlowTRN = false;
-	static std::optional<std::array<uint8_t, 256>> frostSkeletonGlowTRN;
-	if (!attemptedToLoadFrostSkeletonGlowTRN) {
-		attemptedToLoadFrostSkeletonGlowTRN = true;
-		std::array<uint8_t, 256> trn;
-		if (!LoadOptionalFileInMem(TestFrostSkeletonGlowTrn.data(), trn.data(), trn.size()))
-			return nullptr;
-		std::replace(trn.begin(), trn.end(), 255, 0);
-		frostSkeletonGlowTRN = trn;
-	}
-	if (!frostSkeletonGlowTRN)
-		return nullptr;
-	return frostSkeletonGlowTRN->data();
 }
 
 [[nodiscard]] DVL_ALWAYS_INLINE bool IsFloor(Point tilePosition)
@@ -821,11 +794,7 @@ void DrawMonsterHelper(const Surface &out, Point tilePosition, Point targetBuffe
 		ClxDrawOutlineSkipColorZero(out, OutlineColorsMonster, monsterRenderPosition, sprite);
 	}
 	if (IsTestFrostSkeleton(monster)) {
-		if (uint8_t *glowTrn = GetFrostSkeletonGlowTRN()) {
-			for (Point glowOffset : FrostSkeletonGlowOffsets) {
-				ClxDrawTRN(out, monsterRenderPosition + Displacement { glowOffset.x, glowOffset.y }, sprite, glowTrn);
-			}
-		}
+		ClxDrawOutlineSkipColorZero(out, OutlineColorsFrostMonster, monsterRenderPosition, sprite);
 	}
 	DrawMonster(out, tilePosition, monsterRenderPosition, monster, lightTableIndex);
 }
