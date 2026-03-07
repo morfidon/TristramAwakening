@@ -386,7 +386,7 @@ void gamemenu_save_game(bool /*bActivate*/)
 	SetEventHandler(saveProc);
 }
 
-const char *GetGamemenuText(const TMenuItem &menuItem)
+std::string_view GetGamemenuText(const TMenuItem &menuItem)
 {
 	if (menuItem.fnMenu == &gamemenu_save_game)
 		return GetSaveGameMenuLabel();

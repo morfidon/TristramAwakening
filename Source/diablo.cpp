@@ -1875,6 +1875,8 @@ const auto OptionChangeHandlerLanguage = (GetOptions().Language.code.SetValueCha
 
 } // namespace
 
+bool IsEnemyTooCloseForAutoSave();
+
 bool IsAutoSaveSafe()
 {
 	if (gbIsMultiplayer || !gbRunGame)

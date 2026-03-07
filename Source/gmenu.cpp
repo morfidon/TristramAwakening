@@ -129,7 +129,7 @@ int GmenuGetLineWidth(TMenuItem *pItem)
 
 void GmenuDrawMenuItem(const Surface &out, TMenuItem *pItem, int y)
 {
-	const char *menuText = GetGamemenuText(*pItem);
+	const std::string_view menuText = GetGamemenuText(*pItem);
 	const int w = GmenuGetLineWidth(pItem);
 	if (pItem->isSlider()) {
 		const int uiPositionX = GetUIRectangle().position.x;

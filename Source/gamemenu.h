@@ -5,6 +5,8 @@
  */
 #pragma once
 
+#include <string_view>
+
 namespace devilution {
 
 struct TMenuItem;
@@ -16,7 +18,7 @@ void gamemenu_exit_game(bool bActivate);
 void gamemenu_quit_game(bool bActivate);
 void gamemenu_load_game(bool bActivate);
 void gamemenu_save_game(bool bActivate);
-const char *GetGamemenuText(const TMenuItem &menuItem);
+std::string_view GetGamemenuText(const TMenuItem &menuItem);
 
 extern bool isGameMenuOpen;
 
