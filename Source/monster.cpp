@@ -3708,6 +3708,11 @@ tl::expected<void, std::string> InitMonsterGFX(CMonster &monsterType, MonsterSpr
 		InitMonsterTRN(monsterType, trnFile);
 	}
 
+	if (IsTestFrostSkeleton(monsterType)) {
+		RETURN_IF_ERROR(GetMissileSpriteData(MissileGraphicID::ChargedBolt).LoadGFX());
+		RETURN_IF_ERROR(GetMissileSpriteData(MissileGraphicID::BloodStarExplosion).LoadGFX());
+	}
+
 	if (IsAnyOf(mtype, MT_NMAGMA, MT_YMAGMA, MT_BMAGMA, MT_WMAGMA))
 		RETURN_IF_ERROR(GetMissileSpriteData(MissileGraphicID::MagmaBall).LoadGFX());
 	if (IsAnyOf(mtype, MT_STORM, MT_RSTORM, MT_STORML, MT_MAEL))
