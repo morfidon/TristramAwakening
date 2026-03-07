@@ -805,6 +805,10 @@ void DrawMonsterHelper(const Surface &out, Point tilePosition, Point targetBuffe
 		Log("Draw Monster Helper \"{}\": NULL Cel Buffer", monster.name());
 		return;
 	}
+	if (monster.animInfo.numberOfFrames == 0) {
+		Log("Draw Monster Helper \"{}\": zero animation frames", monster.name());
+		return;
+	}
 	if (monster.mode == MonsterMode::Petrified && !IsTileLit(monster.position.old)) {
 		return;
 	}

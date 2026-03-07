@@ -238,8 +238,14 @@ void InitMonster(Monster &monster, Direction rd, size_t typeIndex, Point positio
 	monster.mode = MonsterMode::Stand;
 	monster.animInfo = {};
 	monster.changeAnimationData(MonsterGraphic::Stand);
-	monster.animInfo.tickCounterOfCurrentFrame = GenerateRnd(monster.animInfo.ticksPerFrame - 1);
-	monster.animInfo.currentFrame = GenerateRnd(monster.animInfo.numberOfFrames - 1);
+	if (monster.animInfo.ticksPerFrame > 0)
+		monster.animInfo.tickCounterOfCurrentFrame = GenerateRnd(monster.animInfo.ticksPerFrame - 1);
+	else
+		monster.animInfo.tickCounterOfCurrentFrame = 0;
+	if (monster.animInfo.numberOfFrames > 0)
+		monster.animInfo.currentFrame = GenerateRnd(monster.animInfo.numberOfFrames - 1);
+	else
+		monster.animInfo.currentFrame = 0;
 
 	const int maxhp = RandomIntBetween(monster.data().hitPointsMinimum, monster.data().hitPointsMaximum);
 	monster.maxHitPoints = maxhp << 6;
@@ -3379,9 +3385,6 @@ tl::expected<size_t, std::string> AddMonsterType(_monster_id type, placeflag pla
 
 		RETURN_IF_ERROR(InitMonsterSND(monsterType));
 	}
-
-	if (IsTestFrostSkeleton(monsterType))
-		InitMonsterTRN(monsterType, TestFrostSkeletonTrn);
 
 	monsterType.placeFlags |= placeflag;
 	return typeIndex;
