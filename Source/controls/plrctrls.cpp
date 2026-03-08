@@ -1047,21 +1047,30 @@ void VisualStoreMove(AxisDirection dir)
 	} else if (VisualStoreSlot.y != -1 && VisualStoreSlot.y != VisualStoreGridHeight) {
 		const int itemIdx = VisualStore.pages[VisualStore.currentPage].grid[VisualStoreSlot.x][VisualStoreSlot.y];
 		if (itemIdx > 0) {
-			std::span<Item> items = GetVisualStoreItems();
-			if (itemIdx - 1 < static_cast<int>(items.size())) {
-				movingItemSize = GetInventorySize(items[itemIdx - 1]);
-			}
+			const Item *item = GetVisualStoreItem(itemIdx - 1);
+			if (item != nullptr)
+				movingItemSize = GetInventorySize(*item);
 		}
 	}
 
 	auto getCellId = [&](Point p) -> int {
 		return VisualStore.pages[VisualStore.currentPage].grid[p.x][p.y];
 	};
+	const int visualStoreTabCount = [] {
+		int tabCount = 1;
+		if (VisualStore.vendor == VisualStoreVendor::Smith)
+			tabCount++;
+		const bool hasBuyback = (VisualStore.vendor == VisualStoreVendor::Smith && !SmithBuybackItems.empty())
+		    || (VisualStore.vendor == VisualStoreVendor::Witch && !WitchBuybackItems.empty());
+		if (hasBuyback)
+			tabCount++;
+		return tabCount;
+	}();
 
 	if (dir.x == AxisDirectionX_RIGHT) {
 		if (VisualStoreSlot.y == -1) { // Tabs
-			if (VisualStoreSlot.x == 0 && VisualStore.vendor == VisualStoreVendor::Smith) {
-				VisualStoreSlot.x = 1;
+			if (VisualStoreSlot.x + 1 < visualStoreTabCount) {
+				VisualStoreSlot.x++;
 			} else {
 				// Transition to inventory
 				VisualStoreSlot = { -1, -1 }; // Invalidate visual store slot
@@ -1166,9 +1175,7 @@ void VisualStoreMove(AxisDirection dir)
 	Point mousePos;
 	if (VisualStoreSlot.y == -1) {
 		// Tabs
-		// 0: Basic, 1: Premium
-		// Map to button IDs: TabButtonBasic=0, TabButtonPremium=1
-		int btnId = VisualStoreSlot.x == 0 ? 0 : 1;
+		const int btnId = VisualStoreSlot.x;
 		mousePos = GetVisualBtnCoord(btnId).Center();
 	} else if (VisualStoreSlot.y == VisualStoreGridHeight) {
 		// Repair buttons
@@ -1185,14 +1192,13 @@ void VisualStoreMove(AxisDirection dir)
 		if (!isHoldingItem) {
 			const int itemIdx = VisualStore.pages[VisualStore.currentPage].grid[VisualStoreSlot.x][VisualStoreSlot.y];
 			if (itemIdx > 0) {
-				std::span<Item> items = GetVisualStoreItems();
-				if (itemIdx - 1 < static_cast<int>(items.size())) {
-					const Item &item = items[itemIdx - 1];
-					itemSize = GetInventorySize(item);
+				const Item *item = GetVisualStoreItem(itemIdx - 1);
+				if (item != nullptr) {
+					itemSize = GetInventorySize(*item);
 
 					// Find the top-left of this item (which is stored in the VisualStorePage items list)
 					for (const auto &vsItem : VisualStore.pages[VisualStore.currentPage].items) {
-						if (vsItem.index == itemIdx - 1) {
+						if (vsItem.entryIndex == itemIdx - 1) {
 							// Item positions in VisualStorePage are stored as bottom-left
 							// Convert to top-left for display/cursor calculation
 							displayPos = vsItem.position - Displacement { 0, itemSize.height - 1 };

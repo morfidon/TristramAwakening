@@ -44,6 +44,7 @@ int8_t PlayerItemIndexes[48];
 Item PlayerItems[48];
 
 StaticVector<Item, NumSmithBasicItemsHf> SmithItems;
+StaticVector<Item, MaxVisualStoreBuybackItems> SmithBuybackItems;
 int PremiumItemCount;
 int PremiumItemLevel;
 StaticVector<Item, NumSmithItemsHf> PremiumItems;
@@ -51,6 +52,7 @@ StaticVector<Item, NumSmithItemsHf> PremiumItems;
 StaticVector<Item, NumHealerItemsHf> HealerItems;
 
 StaticVector<Item, NumWitchItemsHf> WitchItems;
+StaticVector<Item, MaxVisualStoreBuybackItems> WitchBuybackItems;
 
 int BoyItemLevel;
 Item BoyItem;
@@ -2118,7 +2120,9 @@ void InitStores()
 	PremiumItemLevel = 1;
 
 	SmithItems.clear();
+	SmithBuybackItems.clear();
 	WitchItems.clear();
+	WitchBuybackItems.clear();
 	HealerItems.clear();
 	PremiumItems.clear();
 
@@ -2140,6 +2144,8 @@ void SetupTownStores()
 	}
 
 	l = std::clamp(l + 2, 6, 16);
+	SmithBuybackItems.clear();
+	WitchBuybackItems.clear();
 	SpawnSmith(l);
 	SpawnWitch(l);
 	SpawnHealer(l);
