@@ -1047,10 +1047,9 @@ void VisualStoreMove(AxisDirection dir)
 	} else if (VisualStoreSlot.y != -1 && VisualStoreSlot.y != VisualStoreGridHeight) {
 		const int itemIdx = VisualStore.pages[VisualStore.currentPage].grid[VisualStoreSlot.x][VisualStoreSlot.y];
 		if (itemIdx > 0) {
-			std::span<Item> items = GetVisualStoreItems();
-			if (itemIdx - 1 < static_cast<int>(items.size())) {
-				movingItemSize = GetInventorySize(items[itemIdx - 1]);
-			}
+			const Item *item = GetVisualStoreItem(itemIdx - 1);
+			if (item != nullptr)
+				movingItemSize = GetInventorySize(*item);
 		}
 	}
 
@@ -1185,14 +1184,13 @@ void VisualStoreMove(AxisDirection dir)
 		if (!isHoldingItem) {
 			const int itemIdx = VisualStore.pages[VisualStore.currentPage].grid[VisualStoreSlot.x][VisualStoreSlot.y];
 			if (itemIdx > 0) {
-				std::span<Item> items = GetVisualStoreItems();
-				if (itemIdx - 1 < static_cast<int>(items.size())) {
-					const Item &item = items[itemIdx - 1];
-					itemSize = GetInventorySize(item);
+				const Item *item = GetVisualStoreItem(itemIdx - 1);
+				if (item != nullptr) {
+					itemSize = GetInventorySize(*item);
 
 					// Find the top-left of this item (which is stored in the VisualStorePage items list)
 					for (const auto &vsItem : VisualStore.pages[VisualStore.currentPage].items) {
-						if (vsItem.index == itemIdx - 1) {
+						if (vsItem.entryIndex == itemIdx - 1) {
 							// Item positions in VisualStorePage are stored as bottom-left
 							// Convert to top-left for display/cursor calculation
 							displayPos = vsItem.position - Displacement { 0, itemSize.height - 1 };

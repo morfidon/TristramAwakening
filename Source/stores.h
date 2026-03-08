@@ -33,6 +33,7 @@ constexpr int NumHealerPinnedItemsMp = 3;
 constexpr int NumWitchItems = 17;
 constexpr int NumWitchItemsHf = 24;
 constexpr int NumWitchPinnedItems = 3;
+constexpr int MaxVisualStoreBuybackItems = 8;
 
 constexpr int NumStoreLines = 104;
 
@@ -75,6 +76,8 @@ extern DVL_API_FOR_TEST Item PlayerItems[48];
 
 /** Items sold by Griswold */
 extern DVL_API_FOR_TEST StaticVector<Item, NumSmithBasicItemsHf> SmithItems;
+/** Recently sold items available for buyback from Griswold */
+extern DVL_API_FOR_TEST StaticVector<Item, MaxVisualStoreBuybackItems> SmithBuybackItems;
 /** Number of premium items for sale by Griswold */
 extern DVL_API_FOR_TEST int PremiumItemCount;
 /** Base level of current premium items sold by Griswold */
@@ -87,6 +90,8 @@ extern DVL_API_FOR_TEST StaticVector<Item, NumHealerItemsHf> HealerItems;
 
 /** Items sold by Adria */
 extern DVL_API_FOR_TEST StaticVector<Item, NumWitchItemsHf> WitchItems;
+/** Recently sold items available for buyback from Adria */
+extern DVL_API_FOR_TEST StaticVector<Item, MaxVisualStoreBuybackItems> WitchBuybackItems;
 
 /** Current level of the item sold by Wirt */
 extern int BoyItemLevel;

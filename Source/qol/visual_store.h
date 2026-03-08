@@ -6,7 +6,6 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <vector>
 
 #include "engine/point.hpp"
@@ -27,14 +26,24 @@ enum class VisualStoreTab : uint8_t {
 	Premium = 1
 };
 
+enum class VisualStoreItemSource : uint8_t {
+	VendorStock,
+	Buyback
+};
+
 // Grid: 5x5 = 25 items per page (sufficient for all vendors)
 inline constexpr int VisualStoreGridWidth = 10;
 inline constexpr int VisualStoreGridHeight = 9;
 inline constexpr int VisualStoreItemsPerPage = VisualStoreGridWidth * VisualStoreGridHeight;
 
 struct VisualStoreItem {
-	uint16_t index; // Index in the vendor's item list
+	uint16_t entryIndex; // Index in VisualStoreState::entries
 	Point position; // Top-left position in the grid
+};
+
+struct VisualStoreEntry {
+	VisualStoreItemSource source;
+	uint16_t sourceIndex; // Index in the underlying source list
 };
 
 struct VisualStorePage {
@@ -46,6 +55,7 @@ struct VisualStoreState {
 	VisualStoreVendor vendor;
 	VisualStoreTab activeTab; // For Smith: Regular vs Premium
 	unsigned currentPage;
+	std::vector<VisualStoreEntry> entries;
 	std::vector<VisualStorePage> pages;
 };
 
@@ -148,10 +158,25 @@ void SellItemToVisualStore(int invIndex);
 int GetVisualStoreItemCount();
 
 /**
- * @brief Get the items array for the current vendor/tab.
- * @return A span of items.
+ * @brief Get the underlying entry metadata for a visual store item index.
+ * @param entryIndex The index in VisualStoreState::entries.
+ * @return Pointer to the entry, or nullptr if invalid.
  */
-std::span<Item> GetVisualStoreItems();
+const VisualStoreEntry *GetVisualStoreEntry(int16_t entryIndex);
+
+/**
+ * @brief Get a visual store item by entry index.
+ * @param entryIndex The index in VisualStoreState::entries.
+ * @return Pointer to the item, or nullptr if invalid.
+ */
+const Item *GetVisualStoreItem(int16_t entryIndex);
+
+/**
+ * @brief Get a mutable visual store item by entry index.
+ * @param entryIndex The index in VisualStoreState::entries.
+ * @return Pointer to the item, or nullptr if invalid.
+ */
+Item *GetVisualStoreItemMutable(int16_t entryIndex);
 
 /**
  * @brief Get the total number of pages for the current vendor/tab.

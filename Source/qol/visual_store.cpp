@@ -76,8 +76,8 @@ constexpr int TabButtonPremium = 1;
 constexpr int RepairAllBtn = 2;
 constexpr int RepairBtn = 3;
 
-/** @brief Get the items array for a specific vendor/tab combination. */
-std::span<Item> GetVendorItems(VisualStoreVendor vendor, VisualStoreTab tab)
+/** @brief Get the stock items array for a specific vendor/tab combination. */
+std::span<Item> GetVendorStockItems(VisualStoreVendor vendor, VisualStoreTab tab)
 {
 	switch (vendor) {
 	case VisualStoreVendor::Smith: {
@@ -100,6 +100,156 @@ std::span<Item> GetVendorItems(VisualStoreVendor vendor, VisualStoreTab tab)
 	}
 	}
 	return {};
+}
+
+StaticVector<Item, MaxVisualStoreBuybackItems> *GetVendorBuybackList(VisualStoreVendor vendor)
+{
+	switch (vendor) {
+	case VisualStoreVendor::Smith:
+		return &SmithBuybackItems;
+	case VisualStoreVendor::Witch:
+		return &WitchBuybackItems;
+	case VisualStoreVendor::Healer:
+	case VisualStoreVendor::Boy:
+		return nullptr;
+	}
+	return nullptr;
+}
+
+bool VendorSupportsBuyback(VisualStoreVendor vendor)
+{
+	return GetVendorBuybackList(vendor) != nullptr;
+}
+
+const Item *GetEntryItem(const VisualStoreEntry &entry)
+{
+	switch (entry.source) {
+	case VisualStoreItemSource::VendorStock: {
+		const std::span<Item> items = GetVendorStockItems(VisualStore.vendor, VisualStore.activeTab);
+		if (entry.sourceIndex >= items.size())
+			return nullptr;
+		return &items[entry.sourceIndex];
+	}
+	case VisualStoreItemSource::Buyback: {
+		const auto *buybackItems = GetVendorBuybackList(VisualStore.vendor);
+		if (buybackItems == nullptr || entry.sourceIndex >= buybackItems->size())
+			return nullptr;
+		return &(*buybackItems)[entry.sourceIndex];
+	}
+	}
+	return nullptr;
+}
+
+Item *GetEntryItemMutable(const VisualStoreEntry &entry)
+{
+	switch (entry.source) {
+	case VisualStoreItemSource::VendorStock: {
+		std::span<Item> items = GetVendorStockItems(VisualStore.vendor, VisualStore.activeTab);
+		if (entry.sourceIndex >= items.size())
+			return nullptr;
+		return &items[entry.sourceIndex];
+	}
+	case VisualStoreItemSource::Buyback: {
+		auto *buybackItems = GetVendorBuybackList(VisualStore.vendor);
+		if (buybackItems == nullptr || entry.sourceIndex >= buybackItems->size())
+			return nullptr;
+		return &(*buybackItems)[entry.sourceIndex];
+	}
+	}
+	return nullptr;
+}
+
+void BuildVisualStoreEntries()
+{
+	VisualStore.entries.clear();
+
+	auto addBuybackEntries = [](VisualStoreVendor vendor) {
+		auto *buybackItems = GetVendorBuybackList(vendor);
+		if (buybackItems == nullptr)
+			return;
+
+		for (size_t i = buybackItems->size(); i > 0; --i) {
+			const uint16_t sourceIndex = static_cast<uint16_t>(i - 1);
+			if ((*buybackItems)[sourceIndex].isEmpty())
+				continue;
+			VisualStore.entries.push_back({ VisualStoreItemSource::Buyback, sourceIndex });
+		}
+	};
+
+	auto addVendorStockEntries = [](VisualStoreVendor vendor, VisualStoreTab tab) {
+		const std::span<Item> items = GetVendorStockItems(vendor, tab);
+		for (uint16_t i = 0; i < items.size(); ++i) {
+			if (items[i].isEmpty())
+				continue;
+			VisualStore.entries.push_back({ VisualStoreItemSource::VendorStock, i });
+		}
+	};
+
+	switch (VisualStore.vendor) {
+	case VisualStoreVendor::Smith:
+		if (VisualStore.activeTab == VisualStoreTab::Basic) {
+			addBuybackEntries(VisualStoreVendor::Smith);
+			addVendorStockEntries(VisualStoreVendor::Smith, VisualStore.activeTab);
+		} else {
+			addVendorStockEntries(VisualStoreVendor::Smith, VisualStore.activeTab);
+		}
+		break;
+	case VisualStoreVendor::Witch:
+		addBuybackEntries(VisualStoreVendor::Witch);
+		addVendorStockEntries(VisualStoreVendor::Witch, VisualStore.activeTab);
+		break;
+	case VisualStoreVendor::Healer:
+	case VisualStoreVendor::Boy:
+		addVendorStockEntries(VisualStore.vendor, VisualStore.activeTab);
+		break;
+	}
+}
+
+void AddItemToBuyback(VisualStoreVendor vendor, const Item &item)
+{
+	auto *buybackItems = GetVendorBuybackList(vendor);
+	if (buybackItems == nullptr || item.isEmpty())
+		return;
+
+	if (buybackItems->size() == MaxVisualStoreBuybackItems)
+		buybackItems->erase(buybackItems->begin());
+
+	buybackItems->push_back(item);
+}
+
+void RemoveVisualStoreEntry(const VisualStoreEntry &entry)
+{
+	switch (entry.source) {
+	case VisualStoreItemSource::Buyback: {
+		auto *buybackItems = GetVendorBuybackList(VisualStore.vendor);
+		if (buybackItems != nullptr && entry.sourceIndex < buybackItems->size())
+			buybackItems->erase(buybackItems->begin() + entry.sourceIndex);
+		break;
+	}
+	case VisualStoreItemSource::VendorStock:
+		switch (VisualStore.vendor) {
+		case VisualStoreVendor::Smith:
+			if (VisualStore.activeTab == VisualStoreTab::Premium) {
+				PremiumItems[entry.sourceIndex].clear();
+				SpawnPremium(*MyPlayer);
+			} else {
+				SmithItems.erase(SmithItems.begin() + entry.sourceIndex);
+			}
+			break;
+		case VisualStoreVendor::Witch:
+			if (entry.sourceIndex >= NumWitchPinnedItems)
+				WitchItems.erase(WitchItems.begin() + entry.sourceIndex);
+			break;
+		case VisualStoreVendor::Healer:
+			if (entry.sourceIndex >= static_cast<uint16_t>(gbIsMultiplayer ? NumHealerPinnedItemsMp : NumHealerPinnedItems))
+				HealerItems.erase(HealerItems.begin() + entry.sourceIndex);
+			break;
+		case VisualStoreVendor::Boy:
+			BoyItem.clear();
+			break;
+		}
+		break;
+	}
 }
 
 /** @brief Check if the current vendor has tabs (Smith only). */
@@ -184,10 +334,16 @@ bool WitchWillBuy(const Item &item)
 /** @brief Rebuild the grid layout for the current vendor/tab. */
 void RefreshVisualStoreLayout()
 {
-	VisualStore.pages.clear();
-	std::span<Item> items = GetVisualStoreItems();
+	BuildVisualStoreEntries();
+	for (const VisualStoreEntry &entry : VisualStore.entries) {
+		Item *item = GetEntryItemMutable(entry);
+		if (item != nullptr)
+			item->_iStatFlag = MyPlayer->CanUseItem(*item);
+	}
 
-	if (items.empty()) {
+	VisualStore.pages.clear();
+
+	if (VisualStore.entries.empty()) {
 		VisualStore.pages.emplace_back();
 		VisualStorePage &page = VisualStore.pages.back();
 		memset(page.grid, 0, sizeof(page.grid));
@@ -203,12 +359,12 @@ void RefreshVisualStoreLayout()
 
 	VisualStorePage *currentPage = &createNewPage();
 
-	for (uint16_t i = 0; i < static_cast<uint16_t>(items.size()); i++) {
-		const Item &item = items[i];
-		if (item.isEmpty())
+	for (uint16_t i = 0; i < static_cast<uint16_t>(VisualStore.entries.size()); i++) {
+		const Item *item = GetEntryItem(VisualStore.entries[i]);
+		if (item == nullptr || item->isEmpty())
 			continue;
 
-		const Size itemSize = GetInventorySize(item);
+		const Size itemSize = GetInventorySize(*item);
 		bool placed = false;
 
 		// Try to place in current page
@@ -293,12 +449,6 @@ void OpenVisualStore(VisualStoreVendor vendor)
 	pcursstoreitem = -1;
 	pcursstorebtn = -1;
 
-	// Refresh item stat flags for current player
-	std::span<Item> items = GetVisualStoreItems();
-	for (Item &item : items) {
-		item._iStatFlag = MyPlayer->CanUseItem(item);
-	}
-
 	RefreshVisualStoreLayout();
 
 	// Initialize controller focus to the visual store grid
@@ -313,6 +463,7 @@ void CloseVisualStore()
 		pcursstoreitem = -1;
 		pcursstorebtn = -1;
 		VisualStoreButtonPressed = -1;
+		VisualStore.entries.clear();
 		VisualStore.pages.clear();
 	}
 }
@@ -326,12 +477,6 @@ void SetVisualStoreTab(VisualStoreTab tab)
 	VisualStore.currentPage = 0;
 	pcursstoreitem = -1;
 	pcursstorebtn = -1;
-
-	// Refresh item stat flags
-	std::span<Item> items = GetVisualStoreItems();
-	for (Item &item : items) {
-		item._iStatFlag = MyPlayer->CanUseItem(item);
-	}
 
 	RefreshVisualStoreLayout();
 }
@@ -463,18 +608,30 @@ Rectangle GetVisualBtnCoord(int btnId)
 
 int GetVisualStoreItemCount()
 {
-	std::span<Item> items = GetVisualStoreItems();
-	int count = 0;
-	for (const Item &item : items) {
-		if (!item.isEmpty())
-			count++;
-	}
-	return count;
+	return static_cast<int>(VisualStore.entries.size());
 }
 
-std::span<Item> GetVisualStoreItems()
+const VisualStoreEntry *GetVisualStoreEntry(int16_t entryIndex)
 {
-	return GetVendorItems(VisualStore.vendor, VisualStore.activeTab);
+	if (entryIndex < 0 || static_cast<size_t>(entryIndex) >= VisualStore.entries.size())
+		return nullptr;
+	return &VisualStore.entries[entryIndex];
+}
+
+const Item *GetVisualStoreItem(int16_t entryIndex)
+{
+	const VisualStoreEntry *entry = GetVisualStoreEntry(entryIndex);
+	if (entry == nullptr)
+		return nullptr;
+	return GetEntryItem(*entry);
+}
+
+Item *GetVisualStoreItemMutable(int16_t entryIndex)
+{
+	const VisualStoreEntry *entry = GetVisualStoreEntry(entryIndex);
+	if (entry == nullptr)
+		return nullptr;
+	return GetEntryItemMutable(*entry);
 }
 
 int GetVisualStorePageCount()
@@ -542,7 +699,6 @@ void DrawVisualStore(const Surface &out)
 		return;
 
 	const VisualStorePage &page = VisualStore.pages[VisualStore.currentPage];
-	std::span<Item> allItems = GetVisualStoreItems();
 
 	constexpr Displacement offset { 0, INV_SLOT_SIZE_PX - 1 };
 
@@ -553,27 +709,31 @@ void DrawVisualStore(const Surface &out)
 			if (itemPlusOne == 0)
 				continue;
 
-			const Item &item = allItems[itemPlusOne - 1];
+			const Item *item = GetVisualStoreItem(itemPlusOne - 1);
+			if (item == nullptr)
+				continue;
 			Point position = GetVisualStoreSlotCoord({ x, y }) + offset;
-			InvDrawSlotBack(out, position, InventorySlotSizeInPixels, item._iMagical);
+			InvDrawSlotBack(out, position, InventorySlotSizeInPixels, item->_iMagical);
 		}
 	}
 
 	// Second pass: draw item sprites
 	for (const auto &vsItem : page.items) {
-		const Item &item = allItems[vsItem.index];
+		const Item *item = GetVisualStoreItem(vsItem.entryIndex);
+		if (item == nullptr)
+			continue;
 		Point position = GetVisualStoreSlotCoord(vsItem.position) + offset;
 
-		const int frame = item._iCurs + CURSOR_FIRSTITEM;
+		const int frame = item->_iCurs + CURSOR_FIRSTITEM;
 		const ClxSprite sprite = GetInvItemSprite(frame);
 
 		// Draw highlight outline if this item is hovered
-		if (pcursstoreitem == vsItem.index) {
-			const uint8_t color = GetOutlineColor(item, true);
+		if (pcursstoreitem == vsItem.entryIndex) {
+			const uint8_t color = GetOutlineColor(*item, true);
 			ClxDrawOutline(out, color, position, sprite);
 		}
 
-		DrawItem(item, out, position, sprite);
+		DrawItem(*item, out, position, sprite);
 	}
 
 	// Draw player gold at bottom
@@ -669,7 +829,6 @@ int16_t CheckVisualStoreHLight(Point mousePosition)
 		return -1;
 
 	const VisualStorePage &page = VisualStore.pages[VisualStore.currentPage];
-	std::span<Item> allItems = GetVisualStoreItems();
 
 	for (int y = 0; y < VisualStoreGridHeight; y++) {
 		for (int x = 0; x < VisualStoreGridWidth; x++) {
@@ -678,7 +837,9 @@ int16_t CheckVisualStoreHLight(Point mousePosition)
 				continue;
 
 			const int itemIndex = itemPlusOne - 1;
-			const Item &item = allItems[itemIndex];
+			const Item *item = GetVisualStoreItem(itemIndex);
+			if (item == nullptr)
+				continue;
 
 			const Rectangle cell {
 				GetVisualStoreSlotCoord({ x, y }),
@@ -687,20 +848,20 @@ int16_t CheckVisualStoreHLight(Point mousePosition)
 
 			if (cell.contains(mousePosition)) {
 				// Set up info display
-				InfoColor = item.getTextColor();
-				InfoString = item.getName();
+				InfoColor = item->getTextColor();
+				InfoString = item->getName();
 
-				const int price = item._iIvalue;
+				const int price = item->_iIvalue;
 				const bool canAfford = PlayerCanAfford(price);
 
-				InfoString = item.getName();
-				FloatingInfoString = item.getName();
-				InfoColor = canAfford ? item.getTextColor() : UiFlags::ColorRed;
+				InfoString = item->getName();
+				FloatingInfoString = item->getName();
+				InfoColor = canAfford ? item->getTextColor() : UiFlags::ColorRed;
 
-				if (item._iIdentified) {
-					PrintItemDetails(item);
+				if (item->_iIdentified) {
+					PrintItemDetails(*item);
 				} else {
-					PrintItemDur(item);
+					PrintItemDur(*item);
 				}
 
 				AddInfoBoxString(StrCat("", FormatInteger(price), " Gold"));
@@ -720,16 +881,16 @@ void CheckVisualStoreItem(Point mousePosition, bool isCtrlHeld, bool isShiftHeld
 	if (itemIndex < 0)
 		return;
 
-	std::span<Item> items = GetVisualStoreItems();
-	if (itemIndex >= static_cast<int16_t>(items.size()))
+	const VisualStoreEntry *entryPtr = GetVisualStoreEntry(itemIndex);
+	const Item *itemPtr = GetVisualStoreItem(itemIndex);
+	if (entryPtr == nullptr || itemPtr == nullptr || itemPtr->isEmpty())
 		return;
-
-	Item &item = items[itemIndex];
-	if (item.isEmpty())
-		return;
+	const VisualStoreEntry entry = *entryPtr;
+	const Item item = *itemPtr;
+	Item placementCheckItem = item;
 
 	// Check if player can afford the item
-	int price = item._iIvalue;
+	const int price = item._iIvalue;
 	uint32_t totalGold = MyPlayer->_pGold + Stash.gold;
 	if (totalGold < static_cast<uint32_t>(price)) {
 		// InitDiabloMsg(EMSG_NOT_ENOUGH_GOLD);
@@ -737,48 +898,17 @@ void CheckVisualStoreItem(Point mousePosition, bool isCtrlHeld, bool isShiftHeld
 	}
 
 	// Check if player has room for the item
-	if (!StoreAutoPlace(item, false)) {
+	if (!StoreAutoPlace(placementCheckItem, false)) {
 		// InitDiabloMsg(EMSG_INVENTORY_FULL);
 		return;
 	}
 
 	// Execute the purchase
 	TakePlrsMoney(price);
-	StoreAutoPlace(item, true);
+	Item placedItem = item;
+	StoreAutoPlace(placedItem, true);
 	PlaySFX(ItemInvSnds[ItemCAnimTbl[item._iCurs]]);
-
-	// Remove item from store (vendor-specific handling)
-	switch (VisualStore.vendor) {
-	case VisualStoreVendor::Smith: {
-		if (VisualStore.activeTab == VisualStoreTab::Premium) {
-			// Premium items get replaced
-			PremiumItems[itemIndex].clear();
-			SpawnPremium(*MyPlayer);
-		} else {
-			// Basic items are removed
-			SmithItems.erase(SmithItems.begin() + itemIndex);
-		}
-		break;
-	}
-	case VisualStoreVendor::Witch: {
-		// First 3 items are pinned, don't remove them
-		if (itemIndex >= 3) {
-			WitchItems.erase(WitchItems.begin() + itemIndex);
-		}
-		break;
-	}
-	case VisualStoreVendor::Healer: {
-		// First 2-3 items are pinned
-		if (itemIndex >= (gbIsMultiplayer ? 3 : 2)) {
-			HealerItems.erase(HealerItems.begin() + itemIndex);
-		}
-		break;
-	}
-	case VisualStoreVendor::Boy: {
-		BoyItem.clear();
-		break;
-	}
-	}
+	RemoveVisualStoreEntry(entry);
 
 	pcursstoreitem = -1;
 	RefreshVisualStoreLayout();
@@ -799,8 +929,9 @@ void CheckVisualStorePaste(Point mousePosition)
 		return;
 	}
 
+	const Item soldItem = player.HoldItem;
 	// Calculate sell price
-	int sellPrice = GetSellPrice(player.HoldItem);
+	int sellPrice = GetSellPrice(soldItem);
 
 	// Add gold to player
 	AddGoldToInventory(player, sellPrice);
@@ -809,6 +940,9 @@ void CheckVisualStorePaste(Point mousePosition)
 	// Clear the held item
 	player.HoldItem.clear();
 	NewCursor(CURSOR_HAND);
+	AddItemToBuyback(VisualStore.vendor, soldItem);
+	pcursstoreitem = -1;
+	RefreshVisualStoreLayout();
 }
 
 bool CanSellToCurrentVendor(const Item &item)
@@ -844,8 +978,9 @@ void SellItemToVisualStore(int invIndex)
 		return;
 	}
 
+	const Item soldItem = item;
 	// Calculate sell price
-	int sellPrice = GetSellPrice(item);
+	int sellPrice = GetSellPrice(soldItem);
 
 	// Add gold to player
 	AddGoldToInventory(player, sellPrice);
@@ -853,6 +988,9 @@ void SellItemToVisualStore(int invIndex)
 
 	// Remove item from inventory
 	player.RemoveInvItem(invIndex);
+	AddItemToBuyback(VisualStore.vendor, soldItem);
+	pcursstoreitem = -1;
+	RefreshVisualStoreLayout();
 }
 
 void CheckVisualStoreButtonPress(Point mousePosition)

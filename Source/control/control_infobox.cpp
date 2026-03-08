@@ -178,18 +178,20 @@ Rectangle GetFloatingInfoRect(const int lineHeight, const int textSpacing)
 	// 5) Visual Store (Rect position)
 	if (pcursstoreitem != -1) {
 		const VisualStorePage &page = VisualStore.pages[VisualStore.currentPage];
-		std::span<Item> allItems = GetVisualStoreItems();
 		for (const auto &vsItem : page.items) {
-			if (vsItem.index != pcursstoreitem)
+			if (vsItem.entryIndex != pcursstoreitem)
 				continue;
 
-			const Item &item = allItems[vsItem.index];
+			const Item *item = GetVisualStoreItem(vsItem.entryIndex);
+			if (item == nullptr)
+				continue;
 			Point itemPosition = GetVisualStoreSlotCoord(vsItem.position);
-			const Size itemGridSize = GetInventorySize(item);
+			const Size itemGridSize = GetInventorySize(*item);
+			constexpr int VisualStoreSlotSpacing = INV_SLOT_SIZE_PX + 1;
 
-			itemPosition.y += itemGridSize.height * (VisualStoreGridHeight + 1) - 1; // Align position to bottom left of the item graphic
-			itemPosition.x += itemGridSize.width * VisualStoreGridWidth / 2;         // Align position to center of the item graphic
-			itemPosition.x -= maxW / 2;                                              // Align position to the center of the floating item info box
+			itemPosition.y += itemGridSize.height * VisualStoreSlotSpacing - 1; // Align position to bottom left of the item graphic
+			itemPosition.x += itemGridSize.width * INV_SLOT_SIZE_PX / 2;        // Align position to center of the item graphic
+			itemPosition.x -= maxW / 2;                                         // Align position to the center of the floating item info box
 
 			return { { itemPosition.x, itemPosition.y }, { maxW, totalH } };
 		}
@@ -226,9 +228,9 @@ int GetHoverSpriteHeight()
 		return GetInventorySize(it).height * (InventorySlotSizeInPixels.height + 1);
 	}
 	if (pcursstoreitem != -1) {
-		std::span<Item> allItems = GetVisualStoreItems();
-		auto &it = allItems[pcursstoreitem];
-		return GetInventorySize(it).height * (INV_SLOT_SIZE_PX + 1);
+		const Item *item = GetVisualStoreItem(pcursstoreitem);
+		if (item != nullptr)
+			return GetInventorySize(*item).height * (INV_SLOT_SIZE_PX + 1);
 	}
 	return InventorySlotSizeInPixels.height;
 }
