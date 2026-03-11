@@ -394,6 +394,9 @@ bool HandleControllerButtonEvent(const SDL_Event &event, const ControllerButtonE
 		return true;
 	}
 
+	if (HandleVisualStoreGamepadButton(ctrlEvent.button, ctrlEvent.up))
+		return true;
+
 	if (ctrlEvent.button != ControllerButton_NONE && ctrlEvent.button == SuppressedButton) {
 		if (!ctrlEvent.up)
 			return true;

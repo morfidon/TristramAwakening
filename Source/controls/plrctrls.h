@@ -65,6 +65,7 @@ bool TryDropItem();
 void InvalidateInventorySlot();
 void FocusOnInventory();
 void FocusOnVisualStore();
+bool HandleVisualStoreGamepadButton(ControllerButton button, bool buttonUp);
 void PerformSpellAction();
 void QuickCast(size_t slot);
 

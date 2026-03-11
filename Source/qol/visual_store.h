@@ -39,7 +39,7 @@ inline constexpr int VisualStoreItemsPerPage = VisualStoreGridWidth * VisualStor
 
 struct VisualStoreItem {
 	uint16_t entryIndex; // Index in VisualStoreState::entries
-	Point position; // Top-left position in the grid
+	Point position;      // Top-left position in the grid
 };
 
 struct VisualStoreEntry {
@@ -92,6 +92,13 @@ void CloseVisualStore();
  * @param tab The tab to switch to.
  */
 void SetVisualStoreTab(VisualStoreTab tab);
+
+/**
+ * @brief Cycle the active visual store tab with wraparound.
+ * @param step Positive for next tab, negative for previous tab.
+ * @return true if the active tab changed.
+ */
+bool CycleVisualStoreTab(int step);
 
 /**
  * @brief Navigate to the next page of store items.
@@ -184,6 +191,18 @@ Item *GetVisualStoreItemMutable(int16_t entryIndex);
  * @return The page count.
  */
 int GetVisualStorePageCount();
+
+/**
+ * @brief Get the number of visible tabs for the current visual store vendor.
+ * @return The tab count.
+ */
+int GetVisibleVisualStoreTabCount();
+
+/**
+ * @brief Get the currently active tab's visible button index.
+ * @return The visible tab index, or 0 if the active tab is not mapped.
+ */
+int GetActiveVisualStoreTabIndex();
 
 /**
  * @brief Convert a grid slot position to screen coordinates.

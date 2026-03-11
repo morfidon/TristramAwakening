@@ -1056,16 +1056,7 @@ void VisualStoreMove(AxisDirection dir)
 	auto getCellId = [&](Point p) -> int {
 		return VisualStore.pages[VisualStore.currentPage].grid[p.x][p.y];
 	};
-	const int visualStoreTabCount = [] {
-		int tabCount = 1;
-		if (VisualStore.vendor == VisualStoreVendor::Smith)
-			tabCount++;
-		const bool hasBuyback = (VisualStore.vendor == VisualStoreVendor::Smith && !SmithBuybackItems.empty())
-		    || (VisualStore.vendor == VisualStoreVendor::Witch && !WitchBuybackItems.empty());
-		if (hasBuyback)
-			tabCount++;
-		return tabCount;
-	}();
+	const int visualStoreTabCount = GetVisibleVisualStoreTabCount();
 
 	if (dir.x == AxisDirectionX_RIGHT) {
 		if (VisualStoreSlot.y == -1) { // Tabs
@@ -1180,8 +1171,8 @@ void VisualStoreMove(AxisDirection dir)
 	} else if (VisualStoreSlot.y == VisualStoreGridHeight) {
 		// Repair buttons
 		// 0: Repair All, 1: Repair
-		// Map to button IDs: RepairAllBtn=2, RepairBtn=3
-		int btnId = VisualStoreSlot.x == 0 ? 2 : 3;
+		// Map to button IDs: RepairAllBtn=3, RepairBtn=4
+		int btnId = VisualStoreSlot.x == 0 ? 3 : 4;
 		mousePos = GetVisualBtnCoord(btnId).Center();
 	} else {
 		// Grid
@@ -2047,6 +2038,39 @@ void FocusOnVisualStore()
 	// Account for held item size when positioning cursor
 	Size itemSize = MyPlayer->HoldItem.isEmpty() ? Size { 1, 1 } : GetInventorySize(MyPlayer->HoldItem);
 	SetCursorPos(slotPos + Displacement { itemSize.width * INV_SLOT_HALF_SIZE_PX, itemSize.height * INV_SLOT_HALF_SIZE_PX });
+}
+
+bool HandleVisualStoreGamepadButton(ControllerButton button, bool buttonUp)
+{
+	if (!IsVisualStoreOpen)
+		return false;
+
+	if (buttonUp && IsAnyOf(button, ControllerButton_BUTTON_LEFTSHOULDER, ControllerButton_BUTTON_RIGHTSHOULDER))
+		return true;
+
+	int step = 0;
+	switch (button) {
+	case ControllerButton_BUTTON_LEFTSHOULDER:
+		step = -1;
+		break;
+	case ControllerButton_BUTTON_RIGHTSHOULDER:
+		step = 1;
+		break;
+	default:
+		return false;
+	}
+
+	if (!CycleVisualStoreTab(step))
+		return false;
+
+	if (VisualStoreSlot.y == -1) {
+		VisualStoreSlot.x = GetActiveVisualStoreTabIndex();
+		SetCursorPos(GetVisualBtnCoord(VisualStoreSlot.x).Center());
+		return true;
+	}
+
+	FocusOnVisualStore();
+	return true;
 }
 
 void DetectInputMethod(const SDL_Event &event, const ControllerButtonEvent &gamepadEvent)

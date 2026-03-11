@@ -130,7 +130,7 @@ bool CurrentVendorHasBuybackItems()
 	return buybackItems != nullptr && !buybackItems->empty();
 }
 
-int GetVisibleTabCount()
+int GetVisibleVisualStoreTabCountInternal()
 {
 	int tabCount = 1; // Basic or Misc
 	if (VisualStore.vendor == VisualStoreVendor::Smith)
@@ -142,7 +142,7 @@ int GetVisibleTabCount()
 
 bool TryGetTabAtIndex(int tabIndex, VisualStoreTab &tab)
 {
-	if (tabIndex < 0 || tabIndex >= GetVisibleTabCount())
+	if (tabIndex < 0 || tabIndex >= GetVisibleVisualStoreTabCountInternal())
 		return false;
 
 	if (tabIndex == 0) {
@@ -168,6 +168,17 @@ bool TryGetTabAtIndex(int tabIndex, VisualStoreTab &tab)
 	}
 
 	return false;
+}
+
+int GetTabIndex(VisualStoreTab tab)
+{
+	for (int tabIndex = 0; tabIndex < GetVisibleVisualStoreTabCountInternal(); ++tabIndex) {
+		VisualStoreTab mappedTab;
+		if (TryGetTabAtIndex(tabIndex, mappedTab) && mappedTab == tab)
+			return tabIndex;
+	}
+
+	return 0;
 }
 
 std::string_view GetTabLabel(VisualStoreTab tab)
@@ -331,7 +342,7 @@ void RemoveVisualStoreEntry(const VisualStoreEntry &entry)
 /** @brief Check if the current vendor has tabs (Smith only). */
 bool VendorHasTabs()
 {
-	return GetVisibleTabCount() > 1;
+	return GetVisibleVisualStoreTabCountInternal() > 1;
 }
 
 /** @brief Check if the current vendor accepts items for sale. */
@@ -503,6 +514,24 @@ void SetVisualStoreTab(VisualStoreTab tab)
 	RefreshVisualStoreLayout();
 }
 
+bool CycleVisualStoreTab(int step)
+{
+	const int tabCount = GetVisibleVisualStoreTabCountInternal();
+	if (tabCount <= 1 || step == 0)
+		return false;
+
+	const int currentTabIndex = GetTabIndex(VisualStore.activeTab);
+	const int normalizedStep = step > 0 ? 1 : -1;
+	const int nextTabIndex = (currentTabIndex + normalizedStep + tabCount) % tabCount;
+
+	VisualStoreTab nextTab;
+	if (!TryGetTabAtIndex(nextTabIndex, nextTab) || nextTab == VisualStore.activeTab)
+		return false;
+
+	SetVisualStoreTab(nextTab);
+	return true;
+}
+
 void VisualStoreNextPage()
 {
 	if (VisualStore.currentPage + 1 < VisualStore.pages.size()) {
@@ -661,6 +690,16 @@ int GetVisualStorePageCount()
 	return std::max(1, static_cast<int>(VisualStore.pages.size()));
 }
 
+int GetVisibleVisualStoreTabCount()
+{
+	return GetVisibleVisualStoreTabCountInternal();
+}
+
+int GetActiveVisualStoreTabIndex()
+{
+	return GetTabIndex(VisualStore.activeTab);
+}
+
 void DrawVisualStore(const Surface &out)
 {
 	if (!VisualStorePanelArt)
@@ -679,7 +718,7 @@ void DrawVisualStore(const Surface &out)
 	    { .flags = UiFlags::AlignCenter | styleGold });*/
 
 	// Draw tab buttons
-	for (int tabIndex = 0; tabIndex < GetVisibleTabCount(); ++tabIndex) {
+	for (int tabIndex = 0; tabIndex < GetVisibleVisualStoreTabCountInternal(); ++tabIndex) {
 		VisualStoreTab tab;
 		if (!TryGetTabAtIndex(tabIndex, tab))
 			continue;
@@ -762,7 +801,7 @@ int16_t CheckVisualStoreHLight(Point mousePosition)
 	const Point panelPos = GetPanelPosition(UiPanels::Stash);
 	if (MyPlayer->HoldItem.isEmpty()) {
 		for (int i = 0; i < 5; i++) {
-			if (i <= TabButton2 && i >= GetVisibleTabCount())
+			if (i <= TabButton2 && i >= GetVisibleVisualStoreTabCountInternal())
 				continue;
 
 			Rectangle button = VisualStoreButtonRect[i];
@@ -972,7 +1011,7 @@ void CheckVisualStoreButtonPress(Point mousePosition)
 		return;
 
 	for (int i = 0; i < 5; i++) {
-		if (i <= TabButton2 && i >= GetVisibleTabCount())
+		if (i <= TabButton2 && i >= GetVisibleVisualStoreTabCountInternal())
 			continue;
 
 		Rectangle button = VisualStoreButtonRect[i];
