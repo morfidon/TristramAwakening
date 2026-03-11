@@ -44,7 +44,7 @@ int8_t PlayerItemIndexes[48];
 Item PlayerItems[48];
 
 StaticVector<Item, NumSmithBasicItemsHf> SmithItems;
-StaticVector<Item, MaxVisualStoreBuybackItems> SmithBuybackItems;
+StaticVector<Item, MaxStoreBuybackItems> SmithBuybackItems;
 int PremiumItemCount;
 int PremiumItemLevel;
 StaticVector<Item, NumSmithItemsHf> PremiumItems;
@@ -52,7 +52,7 @@ StaticVector<Item, NumSmithItemsHf> PremiumItems;
 StaticVector<Item, NumHealerItemsHf> HealerItems;
 
 StaticVector<Item, NumWitchItemsHf> WitchItems;
-StaticVector<Item, MaxVisualStoreBuybackItems> WitchBuybackItems;
+StaticVector<Item, MaxStoreBuybackItems> WitchBuybackItems;
 
 int BoyItemLevel;
 Item BoyItem;
@@ -179,6 +179,116 @@ int LineHeight()
 int TextHeight()
 {
 	return IsSmallFontTall() ? LargeTextHeight : SmallTextHeight;
+}
+
+TalkID GetVendorStore(TalkID store)
+{
+	switch (store) {
+	case TalkID::Smith:
+	case TalkID::SmithBuy:
+	case TalkID::SmithSell:
+	case TalkID::SmithBuyback:
+	case TalkID::SmithRepair:
+	case TalkID::SmithPremiumBuy:
+		return TalkID::Smith;
+	case TalkID::Witch:
+	case TalkID::WitchBuy:
+	case TalkID::WitchSell:
+	case TalkID::WitchBuyback:
+	case TalkID::WitchRecharge:
+		return TalkID::Witch;
+	default:
+		return TalkID::None;
+	}
+}
+
+constexpr int SmithBuybackMenuLine = 18;
+constexpr int WitchBuybackMenuLine = 18;
+
+int GetSmithRepairMenuLine()
+{
+	return SmithBuybackItems.empty() ? 18 : 20;
+}
+
+int GetSmithLeaveMenuLine()
+{
+	return SmithBuybackItems.empty() ? 20 : 22;
+}
+
+int GetWitchRechargeMenuLine()
+{
+	return WitchBuybackItems.empty() ? 18 : 20;
+}
+
+int GetWitchLeaveMenuLine()
+{
+	return WitchBuybackItems.empty() ? 20 : 22;
+}
+
+std::string_view GetBuybackTitle(TalkID store)
+{
+	switch (store) {
+	case TalkID::SmithBuyback:
+		return _("These are the items you sold me:");
+	case TalkID::WitchBuyback:
+		return _("These are the items you sold me:");
+	default:
+		return {};
+	}
+}
+
+int GetBuybackReturnLine(TalkID store)
+{
+	switch (store) {
+	case TalkID::SmithBuyback:
+		return SmithBuybackItems.empty() ? GetSmithRepairMenuLine() : SmithBuybackMenuLine;
+	case TalkID::WitchBuyback:
+		return WitchBuybackItems.empty() ? GetWitchRechargeMenuLine() : WitchBuybackMenuLine;
+	default:
+		return 0;
+	}
+}
+
+void AddSText(uint8_t x, size_t y, std::string_view text, UiFlags flags, bool sel, int cursId, bool cursIndent);
+void AddSLine(size_t y);
+void AddItemListBackButton(bool selectable);
+void ScrollVendorStore(std::span<Item> itemData, int storeLimit, int idx, int selling);
+
+void ScrollStoreBuyback(int idx)
+{
+	ScrollVendorStore(PlayerItems, CurrentItemIndex, idx, true);
+}
+
+void SetupBuybackStore(TalkID store)
+{
+	const auto *buybackItems = GetStoreBuybackItems(store);
+	if (buybackItems == nullptr || buybackItems->empty())
+		return;
+
+	IsTextFullSize = true;
+	HasScrollbar = true;
+	ScrollPos = 0;
+	RenderGold = true;
+	CurrentItemIndex = 0;
+
+	for (auto &item : PlayerItems) {
+		item.clear();
+	}
+
+	for (size_t i = buybackItems->size(); i > 0 && CurrentItemIndex < 48; --i) {
+		const size_t sourceIndex = i - 1;
+		PlayerItems[CurrentItemIndex] = (*buybackItems)[sourceIndex];
+		PlayerItems[CurrentItemIndex]._iStatFlag = MyPlayer->CanUseItem(PlayerItems[CurrentItemIndex]);
+		PlayerItemIndexes[CurrentItemIndex] = static_cast<int8_t>(sourceIndex);
+		CurrentItemIndex++;
+	}
+
+	AddSText(20, 1, GetBuybackTitle(store), UiFlags::ColorWhitegold, false, -1, false);
+	AddSLine(3);
+	ScrollStoreBuyback(ScrollPos);
+	AddItemListBackButton(false);
+
+	NumTextLines = std::max(CurrentItemIndex - 4, 0);
 }
 
 void CalculateLineHeights()
@@ -377,8 +487,10 @@ void StartSmith()
 		AddSText(0, 12, _("Buy basic items"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
 		AddSText(0, 14, _("Buy premium items"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
 		AddSText(0, 16, _("Sell items"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
-		AddSText(0, 18, _("Repair items"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
-		AddSText(0, 20, _("Leave the shop"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
+		if (!SmithBuybackItems.empty())
+			AddSText(0, 18, _("Buy back items"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
+		AddSText(0, GetSmithRepairMenuLine(), _("Repair items"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
+		AddSText(0, GetSmithLeaveMenuLine(), _("Leave the shop"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
 	}
 	AddSLine(5);
 	CurrentItemIndex = 20;
@@ -455,6 +567,11 @@ bool StartSmithPremiumBuy()
 	return true;
 }
 
+void StartSmithBuyback()
+{
+	SetupBuybackStore(TalkID::SmithBuyback);
+}
+
 bool SmithSellOk(int i)
 {
 	Item *pI;
@@ -465,24 +582,7 @@ bool SmithSellOk(int i)
 		pI = &MyPlayer->SpdList[-(i + 1)];
 	}
 
-	if (pI->isEmpty())
-		return false;
-
-	if (pI->_iMiscId > IMISC_OILFIRST && pI->_iMiscId < IMISC_OILLAST)
-		return true;
-
-	if (pI->_itype == ItemType::Misc)
-		return false;
-	if (pI->_itype == ItemType::Gold)
-		return false;
-	if (pI->_itype == ItemType::Staff && (!gbIsHellfire || IsValidSpell(pI->_iSpell)))
-		return false;
-	if (pI->_iClass == ICLASS_QUEST)
-		return false;
-	if (pI->IDidx == IDI_LAZSTAFF)
-		return false;
-
-	return true;
+	return CanVendorBuyItem(TalkID::Smith, *pI);
 }
 
 void ScrollSmithSell(int idx)
@@ -509,10 +609,7 @@ void StartSmithSell()
 			sellOk = true;
 			PlayerItems[CurrentItemIndex] = myPlayer.InvList[i];
 
-			if (PlayerItems[CurrentItemIndex]._iMagical != ITEM_QUALITY_NORMAL && PlayerItems[CurrentItemIndex]._iIdentified)
-				PlayerItems[CurrentItemIndex]._ivalue = PlayerItems[CurrentItemIndex]._iIvalue;
-
-			PlayerItems[CurrentItemIndex]._ivalue = std::max(PlayerItems[CurrentItemIndex]._ivalue / 4, 1);
+			PlayerItems[CurrentItemIndex]._ivalue = GetStoreSellPrice(PlayerItems[CurrentItemIndex]);
 			PlayerItems[CurrentItemIndex]._iIvalue = PlayerItems[CurrentItemIndex]._ivalue;
 			PlayerItemIndexes[CurrentItemIndex] = i;
 			CurrentItemIndex++;
@@ -526,10 +623,7 @@ void StartSmithSell()
 			sellOk = true;
 			PlayerItems[CurrentItemIndex] = myPlayer.SpdList[i];
 
-			if (PlayerItems[CurrentItemIndex]._iMagical != ITEM_QUALITY_NORMAL && PlayerItems[CurrentItemIndex]._iIdentified)
-				PlayerItems[CurrentItemIndex]._ivalue = PlayerItems[CurrentItemIndex]._iIvalue;
-
-			PlayerItems[CurrentItemIndex]._ivalue = std::max(PlayerItems[CurrentItemIndex]._ivalue / 4, 1);
+			PlayerItems[CurrentItemIndex]._ivalue = GetStoreSellPrice(PlayerItems[CurrentItemIndex]);
 			PlayerItems[CurrentItemIndex]._iIvalue = PlayerItems[CurrentItemIndex]._ivalue;
 			PlayerItemIndexes[CurrentItemIndex] = -(i + 1);
 			CurrentItemIndex++;
@@ -652,8 +746,10 @@ void StartWitch()
 	} else {
 		AddSText(0, 14, _("Buy items"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
 		AddSText(0, 16, _("Sell items"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
-		AddSText(0, 18, _("Recharge staves"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
-		AddSText(0, 20, _("Leave the shack"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
+		if (!WitchBuybackItems.empty())
+			AddSText(0, 18, _("Buy back items"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
+		AddSText(0, GetWitchRechargeMenuLine(), _("Recharge staves"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
+		AddSText(0, GetWitchLeaveMenuLine(), _("Leave the shack"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
 		AddSLine(5);
 	}
 
@@ -663,6 +759,11 @@ void StartWitch()
 void ScrollWitchBuy(int idx)
 {
 	ScrollVendorStore(WitchItems, static_cast<int>(WitchItems.size()), idx);
+}
+
+void StartWitchBuyback()
+{
+	SetupBuybackStore(TalkID::WitchBuyback);
 }
 
 void WitchBookLevel(Item &bookItem)
@@ -707,26 +808,12 @@ bool WitchSellOk(int i)
 {
 	Item *pI;
 
-	bool rv = false;
-
 	if (i >= 0)
 		pI = &MyPlayer->InvList[i];
 	else
 		pI = &MyPlayer->SpdList[-(i + 1)];
 
-	if (pI->_itype == ItemType::Misc)
-		rv = true;
-	if (pI->_iMiscId > 29 && pI->_iMiscId < 41)
-		rv = false;
-	if (pI->_iClass == ICLASS_QUEST)
-		rv = false;
-	if (pI->_itype == ItemType::Staff && (!gbIsHellfire || IsValidSpell(pI->_iSpell)))
-		rv = true;
-	if (pI->IDidx >= IDI_FIRSTQUEST && pI->IDidx <= IDI_LASTQUEST)
-		rv = false;
-	if (pI->IDidx == IDI_LAZSTAFF)
-		rv = false;
-	return rv;
+	return CanVendorBuyItem(TalkID::Witch, *pI);
 }
 
 void StartWitchSell()
@@ -748,10 +835,7 @@ void StartWitchSell()
 			sellok = true;
 			PlayerItems[CurrentItemIndex] = myPlayer.InvList[i];
 
-			if (PlayerItems[CurrentItemIndex]._iMagical != ITEM_QUALITY_NORMAL && PlayerItems[CurrentItemIndex]._iIdentified)
-				PlayerItems[CurrentItemIndex]._ivalue = PlayerItems[CurrentItemIndex]._iIvalue;
-
-			PlayerItems[CurrentItemIndex]._ivalue = std::max(PlayerItems[CurrentItemIndex]._ivalue / 4, 1);
+			PlayerItems[CurrentItemIndex]._ivalue = GetStoreSellPrice(PlayerItems[CurrentItemIndex]);
 			PlayerItems[CurrentItemIndex]._iIvalue = PlayerItems[CurrentItemIndex]._ivalue;
 			PlayerItemIndexes[CurrentItemIndex] = i;
 			CurrentItemIndex++;
@@ -765,10 +849,7 @@ void StartWitchSell()
 			sellok = true;
 			PlayerItems[CurrentItemIndex] = myPlayer.SpdList[i];
 
-			if (PlayerItems[CurrentItemIndex]._iMagical != ITEM_QUALITY_NORMAL && PlayerItems[CurrentItemIndex]._iIdentified)
-				PlayerItems[CurrentItemIndex]._ivalue = PlayerItems[CurrentItemIndex]._iIvalue;
-
-			PlayerItems[CurrentItemIndex]._ivalue = std::max(PlayerItems[CurrentItemIndex]._ivalue / 4, 1);
+			PlayerItems[CurrentItemIndex]._ivalue = GetStoreSellPrice(PlayerItems[CurrentItemIndex]);
 			PlayerItems[CurrentItemIndex]._iIvalue = PlayerItems[CurrentItemIndex]._ivalue;
 			PlayerItemIndexes[CurrentItemIndex] = -(i + 1);
 			CurrentItemIndex++;
@@ -912,6 +993,8 @@ void StoreConfirm(Item &item)
 	case TalkID::SmithPremiumBuy:
 	case TalkID::WitchBuy:
 	case TalkID::SmithBuy:
+	case TalkID::SmithBuyback:
+	case TalkID::WitchBuyback:
 		prompt = _("Are you sure you want to buy this item?");
 		break;
 	case TalkID::WitchRecharge:
@@ -1301,9 +1384,20 @@ void SmithEnter()
 		}
 		break;
 	case 18:
-		StartStore(TalkID::SmithRepair);
+		if (!*GetOptions().Gameplay.visualStoreUI && !SmithBuybackItems.empty()) {
+			StartStore(TalkID::SmithBuyback);
+		} else {
+			StartStore(TalkID::SmithRepair);
+		}
 		break;
 	case 20:
+		if (!*GetOptions().Gameplay.visualStoreUI && !SmithBuybackItems.empty()) {
+			StartStore(TalkID::SmithRepair);
+			break;
+		}
+		ActiveStore = TalkID::None;
+		break;
+	case 22:
 		ActiveStore = TalkID::None;
 		break;
 	}
@@ -1412,8 +1506,10 @@ bool StoreGoldFit(Item &item)
 void StoreSellItem()
 {
 	Player &myPlayer = *MyPlayer;
-
 	int idx = OldScrollPos + ((OldTextLine - PreviousScrollPos) / 4);
+	const Item soldItem = PlayerItems[idx];
+	const TalkID buybackStore = GetVendorStore(OldActiveStore);
+
 	if (PlayerItemIndexes[idx] >= 0)
 		myPlayer.RemoveInvItem(PlayerItemIndexes[idx]);
 	else
@@ -1430,8 +1526,8 @@ void StoreSellItem()
 	}
 
 	AddGoldToInventory(myPlayer, cost);
-
 	myPlayer._pGold += cost;
+	AddItemToVendorBuyback(buybackStore, soldItem);
 }
 
 void SmithSellEnter()
@@ -1455,6 +1551,63 @@ void SmithSellEnter()
 
 	TempItem = PlayerItems[idx];
 	StartStore(TalkID::Confirm);
+}
+
+void StoreBuybackEnter(TalkID store)
+{
+	if (CurrentTextLine == BackButtonLine()) {
+		StartStore(GetVendorStore(store));
+		CurrentTextLine = GetBuybackReturnLine(store);
+		return;
+	}
+
+	OldTextLine = CurrentTextLine;
+	OldActiveStore = store;
+	OldScrollPos = ScrollPos;
+
+	const int idx = ScrollPos + ((CurrentTextLine - PreviousScrollPos) / 4);
+	const auto *buybackItems = GetStoreBuybackItems(store);
+	if (buybackItems == nullptr || buybackItems->empty() || idx < 0 || idx >= CurrentItemIndex) {
+		StartStore(GetVendorStore(store));
+		CurrentTextLine = GetBuybackReturnLine(store);
+		return;
+	}
+
+	if (!PlayerCanAfford(PlayerItems[idx]._iIvalue)) {
+		StartStore(TalkID::NoMoney);
+		return;
+	}
+
+	if (!StoreAutoPlace(PlayerItems[idx], false)) {
+		StartStore(TalkID::NoRoom);
+		return;
+	}
+
+	TempItem = PlayerItems[idx];
+	StartStore(TalkID::Confirm);
+}
+
+void SmithBuybackEnter()
+{
+	StoreBuybackEnter(TalkID::SmithBuyback);
+}
+
+void BuyBackItem(TalkID store)
+{
+	const int idx = OldScrollPos + ((OldTextLine - PreviousScrollPos) / 4);
+	if (idx < 0 || idx >= CurrentItemIndex)
+		return;
+
+	const size_t sourceIndex = static_cast<size_t>(PlayerItemIndexes[idx]);
+	auto *buybackItems = GetStoreBuybackItems(store);
+	if (buybackItems == nullptr || sourceIndex >= buybackItems->size())
+		return;
+
+	Item item = (*buybackItems)[sourceIndex];
+	TakePlrsMoney(item._iIvalue);
+	StoreAutoPlace(item, true);
+	RemoveItemFromVendorBuyback(store, sourceIndex);
+	CalcPlrInv(*MyPlayer, true);
 }
 
 /**
@@ -1490,7 +1643,7 @@ void SmithRepairEnter()
 {
 	if (CurrentTextLine == BackButtonLine()) {
 		StartStore(TalkID::Smith);
-		CurrentTextLine = 18;
+		CurrentTextLine = GetSmithRepairMenuLine();
 		return;
 	}
 
@@ -1535,9 +1688,20 @@ void WitchEnter()
 		}
 		break;
 	case 18:
-		StartStore(TalkID::WitchRecharge);
+		if (!*GetOptions().Gameplay.visualStoreUI && !WitchBuybackItems.empty()) {
+			StartStore(TalkID::WitchBuyback);
+		} else {
+			StartStore(TalkID::WitchRecharge);
+		}
 		break;
 	case 20:
+		if (!*GetOptions().Gameplay.visualStoreUI && !WitchBuybackItems.empty()) {
+			StartStore(TalkID::WitchRecharge);
+			break;
+		}
+		ActiveStore = TalkID::None;
+		break;
+	case 22:
 		ActiveStore = TalkID::None;
 		break;
 	}
@@ -1614,6 +1778,11 @@ void WitchSellEnter()
 	StartStore(TalkID::Confirm);
 }
 
+void WitchBuybackEnter()
+{
+	StoreBuybackEnter(TalkID::WitchBuyback);
+}
+
 /**
  * @brief Recharges an item in the player's inventory or body in the witch.
  */
@@ -1641,7 +1810,7 @@ void WitchRechargeEnter()
 {
 	if (CurrentTextLine == BackButtonLine()) {
 		StartStore(TalkID::Witch);
-		CurrentTextLine = 18;
+		CurrentTextLine = GetWitchRechargeMenuLine();
 		return;
 	}
 
@@ -1798,6 +1967,9 @@ void ConfirmEnter(Item &item)
 		case TalkID::SmithBuy:
 			SmithBuyItem(item);
 			break;
+		case TalkID::SmithBuyback:
+			BuyBackItem(TalkID::SmithBuyback);
+			break;
 		case TalkID::SmithSell:
 		case TalkID::WitchSell:
 			StoreSellItem();
@@ -1810,6 +1982,9 @@ void ConfirmEnter(Item &item)
 			break;
 		case TalkID::WitchRecharge:
 			WitchRechargeItem(item._iIvalue);
+			break;
+		case TalkID::WitchBuyback:
+			BuyBackItem(TalkID::WitchBuyback);
 			break;
 		case TalkID::BoyBuy:
 			BoyBuyItem(BoyItem, item._iIvalue);
@@ -2068,6 +2243,87 @@ void DrawSelector(const Surface &out, const Rectangle &rect, std::string_view te
 
 } // namespace
 
+bool CanVendorBuyItem(TalkID store, const Item &item)
+{
+	const TalkID vendorStore = GetVendorStore(store);
+	if (item.isEmpty())
+		return false;
+
+	switch (vendorStore) {
+	case TalkID::Smith:
+		if (item._iMiscId > IMISC_OILFIRST && item._iMiscId < IMISC_OILLAST)
+			return true;
+		if (item._itype == ItemType::Misc)
+			return false;
+		if (item._itype == ItemType::Gold)
+			return false;
+		if (item._itype == ItemType::Staff && (!gbIsHellfire || IsValidSpell(item._iSpell)))
+			return false;
+		if (item._iClass == ICLASS_QUEST)
+			return false;
+		return item.IDidx != IDI_LAZSTAFF;
+	case TalkID::Witch: {
+		bool canBuy = false;
+		if (item._itype == ItemType::Misc)
+			canBuy = true;
+		if (item._iMiscId > 29 && item._iMiscId < 41)
+			canBuy = false;
+		if (item._iClass == ICLASS_QUEST)
+			canBuy = false;
+		if (item._itype == ItemType::Staff && (!gbIsHellfire || IsValidSpell(item._iSpell)))
+			canBuy = true;
+		if (item.IDidx >= IDI_FIRSTQUEST && item.IDidx <= IDI_LASTQUEST)
+			canBuy = false;
+		if (item.IDidx == IDI_LAZSTAFF)
+			canBuy = false;
+		return canBuy;
+	}
+	default:
+		return false;
+	}
+}
+
+StaticVector<Item, MaxStoreBuybackItems> *GetStoreBuybackItems(TalkID store)
+{
+	switch (GetVendorStore(store)) {
+	case TalkID::Smith:
+		return &SmithBuybackItems;
+	case TalkID::Witch:
+		return &WitchBuybackItems;
+	default:
+		return nullptr;
+	}
+}
+
+int GetStoreSellPrice(const Item &item)
+{
+	int value = item._ivalue;
+	if (item._iMagical != ITEM_QUALITY_NORMAL && item._iIdentified)
+		value = item._iIvalue;
+	return std::max(value / 4, 1);
+}
+
+void AddItemToVendorBuyback(TalkID store, const Item &item)
+{
+	auto *buybackItems = GetStoreBuybackItems(store);
+	if (buybackItems == nullptr || item.isEmpty())
+		return;
+
+	if (buybackItems->size() == MaxStoreBuybackItems)
+		buybackItems->erase(buybackItems->begin());
+
+	buybackItems->push_back(item);
+}
+
+void RemoveItemFromVendorBuyback(TalkID store, size_t index)
+{
+	auto *buybackItems = GetStoreBuybackItems(store);
+	if (buybackItems == nullptr || index >= buybackItems->size())
+		return;
+
+	buybackItems->erase(buybackItems->begin() + index);
+}
+
 bool StoreAutoPlace(Item &item, bool persistItem)
 {
 	Player &player = *MyPlayer;
@@ -2319,6 +2575,16 @@ void StartStore(TalkID s)
 	case TalkID::SmithSell:
 		StartSmithSell();
 		break;
+	case TalkID::SmithBuyback:
+		if (!SmithBuybackItems.empty())
+			StartSmithBuyback();
+		else {
+			ActiveStore = TalkID::SmithBuyback;
+			OldTextLine = GetBuybackReturnLine(TalkID::SmithBuyback);
+			StoreESC();
+			return;
+		}
+		break;
 	case TalkID::SmithRepair:
 		StartSmithRepair();
 		break;
@@ -2331,6 +2597,16 @@ void StartStore(TalkID s)
 		break;
 	case TalkID::WitchSell:
 		StartWitchSell();
+		break;
+	case TalkID::WitchBuyback:
+		if (!WitchBuybackItems.empty())
+			StartWitchBuyback();
+		else {
+			ActiveStore = TalkID::WitchBuyback;
+			OldTextLine = GetBuybackReturnLine(TalkID::WitchBuyback);
+			StoreESC();
+			return;
+		}
 		break;
 	case TalkID::WitchRecharge:
 		StartWitchRecharge();
@@ -2416,6 +2692,10 @@ void DrawSText(const Surface &out)
 		case TalkID::StorytellerIdentify:
 			ScrollSmithSell(ScrollPos);
 			break;
+		case TalkID::SmithBuyback:
+		case TalkID::WitchBuyback:
+			ScrollStoreBuyback(ScrollPos);
+			break;
 		case TalkID::WitchBuy:
 			ScrollWitchBuy(ScrollPos);
 			break;
@@ -2484,9 +2764,13 @@ void StoreESC()
 		StartStore(TalkID::Smith);
 		CurrentTextLine = 16;
 		break;
+	case TalkID::SmithBuyback:
+		StartStore(TalkID::Smith);
+		CurrentTextLine = GetBuybackReturnLine(TalkID::SmithBuyback);
+		break;
 	case TalkID::SmithRepair:
 		StartStore(TalkID::Smith);
-		CurrentTextLine = 18;
+		CurrentTextLine = GetSmithRepairMenuLine();
 		break;
 	case TalkID::WitchBuy:
 		StartStore(TalkID::Witch);
@@ -2496,9 +2780,13 @@ void StoreESC()
 		StartStore(TalkID::Witch);
 		CurrentTextLine = 16;
 		break;
+	case TalkID::WitchBuyback:
+		StartStore(TalkID::Witch);
+		CurrentTextLine = GetBuybackReturnLine(TalkID::WitchBuyback);
+		break;
 	case TalkID::WitchRecharge:
 		StartStore(TalkID::Witch);
-		CurrentTextLine = 18;
+		CurrentTextLine = GetWitchRechargeMenuLine();
 		break;
 	case TalkID::HealerBuy:
 		StartStore(TalkID::Healer);
@@ -2663,6 +2951,9 @@ void StoreEnter()
 	case TalkID::SmithSell:
 		SmithSellEnter();
 		break;
+	case TalkID::SmithBuyback:
+		SmithBuybackEnter();
+		break;
 	case TalkID::SmithRepair:
 		SmithRepairEnter();
 		break;
@@ -2674,6 +2965,9 @@ void StoreEnter()
 		break;
 	case TalkID::WitchSell:
 		WitchSellEnter();
+		break;
+	case TalkID::WitchBuyback:
+		WitchBuybackEnter();
 		break;
 	case TalkID::WitchRecharge:
 		WitchRechargeEnter();

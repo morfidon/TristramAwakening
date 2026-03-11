@@ -5,6 +5,7 @@
  */
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 
@@ -33,7 +34,7 @@ constexpr int NumHealerPinnedItemsMp = 3;
 constexpr int NumWitchItems = 17;
 constexpr int NumWitchItemsHf = 24;
 constexpr int NumWitchPinnedItems = 3;
-constexpr int MaxVisualStoreBuybackItems = 8;
+constexpr int MaxStoreBuybackItems = 8;
 
 constexpr int NumStoreLines = 104;
 
@@ -42,10 +43,12 @@ enum class TalkID : uint8_t {
 	Smith,
 	SmithBuy,
 	SmithSell,
+	SmithBuyback,
 	SmithRepair,
 	Witch,
 	WitchBuy,
 	WitchSell,
+	WitchBuyback,
 	WitchRecharge,
 	NoMoney,
 	NoRoom,
@@ -77,7 +80,7 @@ extern DVL_API_FOR_TEST Item PlayerItems[48];
 /** Items sold by Griswold */
 extern DVL_API_FOR_TEST StaticVector<Item, NumSmithBasicItemsHf> SmithItems;
 /** Recently sold items available for buyback from Griswold */
-extern DVL_API_FOR_TEST StaticVector<Item, MaxVisualStoreBuybackItems> SmithBuybackItems;
+extern DVL_API_FOR_TEST StaticVector<Item, MaxStoreBuybackItems> SmithBuybackItems;
 /** Number of premium items for sale by Griswold */
 extern DVL_API_FOR_TEST int PremiumItemCount;
 /** Base level of current premium items sold by Griswold */
@@ -91,7 +94,7 @@ extern DVL_API_FOR_TEST StaticVector<Item, NumHealerItemsHf> HealerItems;
 /** Items sold by Adria */
 extern DVL_API_FOR_TEST StaticVector<Item, NumWitchItemsHf> WitchItems;
 /** Recently sold items available for buyback from Adria */
-extern DVL_API_FOR_TEST StaticVector<Item, MaxVisualStoreBuybackItems> WitchBuybackItems;
+extern DVL_API_FOR_TEST StaticVector<Item, MaxStoreBuybackItems> WitchBuybackItems;
 
 /** Current level of the item sold by Wirt */
 extern int BoyItemLevel;
@@ -133,5 +136,10 @@ bool IsPlayerInStore();
  */
 bool StoreAutoPlace(Item &item, bool persistItem);
 bool PlayerCanAfford(int price);
+bool CanVendorBuyItem(TalkID store, const Item &item);
+StaticVector<Item, MaxStoreBuybackItems> *GetStoreBuybackItems(TalkID store);
+int GetStoreSellPrice(const Item &item);
+void AddItemToVendorBuyback(TalkID store, const Item &item);
+void RemoveItemFromVendorBuyback(TalkID store, size_t index);
 
 } // namespace devilution

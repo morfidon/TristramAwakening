@@ -62,11 +62,11 @@ constexpr Rectangle VisualStoreButtonRect[] = {
 	//{ { 242, 19 }, ButtonSize }, // 1 right
 	//{ { 279, 19 }, ButtonSize }, // 10 right
 	// Tab buttons
-	{ { 14, 21 }, { 72, 22 } },           // Tab 0
-	{ { 14 + 73, 21 }, { 72, 22 } },      // Tab 1
-	{ { 14 + 73 * 2, 21 }, { 72, 22 } },  // Tab 2
-	{ { 233, 315 }, { 48, 24 } },         // Repair All Btn
-	{ { 286, 315 }, { 24, 24 } },         // Repair Btn
+	{ { 14, 21 }, { 72, 22 } },          // Tab 0
+	{ { 14 + 73, 21 }, { 72, 22 } },     // Tab 1
+	{ { 14 + 73 * 2, 21 }, { 72, 22 } }, // Tab 2
+	{ { 233, 315 }, { 48, 24 } },        // Repair All Btn
+	{ { 286, 315 }, { 24, 24 } },        // Repair Btn
 };
 
 // constexpr int NavButton10Left = 0;
@@ -105,28 +105,28 @@ std::span<Item> GetVendorStockItems(VisualStoreVendor vendor, VisualStoreTab tab
 	return {};
 }
 
-StaticVector<Item, MaxVisualStoreBuybackItems> *GetVendorBuybackList(VisualStoreVendor vendor)
+TalkID GetVisualStoreTalkId(VisualStoreVendor vendor)
 {
 	switch (vendor) {
 	case VisualStoreVendor::Smith:
-		return &SmithBuybackItems;
+		return TalkID::Smith;
 	case VisualStoreVendor::Witch:
-		return &WitchBuybackItems;
+		return TalkID::Witch;
 	case VisualStoreVendor::Healer:
 	case VisualStoreVendor::Boy:
-		return nullptr;
+		return TalkID::None;
 	}
-	return nullptr;
+	return TalkID::None;
 }
 
-bool VendorSupportsBuyback(VisualStoreVendor vendor)
+StaticVector<Item, MaxStoreBuybackItems> *GetVendorBuybackList(VisualStoreVendor vendor)
 {
-	return GetVendorBuybackList(vendor) != nullptr;
+	return GetStoreBuybackItems(GetVisualStoreTalkId(vendor));
 }
 
 bool CurrentVendorHasBuybackItems()
 {
-	auto *buybackItems = GetVendorBuybackList(VisualStore.vendor);
+	const auto *buybackItems = GetStoreBuybackItems(GetVisualStoreTalkId(VisualStore.vendor));
 	return buybackItems != nullptr && !buybackItems->empty();
 }
 
@@ -295,25 +295,11 @@ void BuildVisualStoreEntries()
 	}
 }
 
-void AddItemToBuyback(VisualStoreVendor vendor, const Item &item)
-{
-	auto *buybackItems = GetVendorBuybackList(vendor);
-	if (buybackItems == nullptr || item.isEmpty())
-		return;
-
-	if (buybackItems->size() == MaxVisualStoreBuybackItems)
-		buybackItems->erase(buybackItems->begin());
-
-	buybackItems->push_back(item);
-}
-
 void RemoveVisualStoreEntry(const VisualStoreEntry &entry)
 {
 	switch (entry.source) {
 	case VisualStoreItemSource::Buyback: {
-		auto *buybackItems = GetVendorBuybackList(VisualStore.vendor);
-		if (buybackItems != nullptr && entry.sourceIndex < buybackItems->size())
-			buybackItems->erase(buybackItems->begin() + entry.sourceIndex);
+		RemoveItemFromVendorBuyback(GetVisualStoreTalkId(VisualStore.vendor), entry.sourceIndex);
 		break;
 	}
 	case VisualStoreItemSource::VendorStock:
@@ -362,63 +348,6 @@ bool VendorAcceptsSale()
 	}
 	}
 	return false;
-}
-
-/** @brief Calculate the sell price for an item (1/4 of value). */
-int GetSellPrice(const Item &item)
-{
-	int value = item._ivalue;
-	if (item._iMagical != ITEM_QUALITY_NORMAL && item._iIdentified)
-		value = item._iIvalue;
-	return std::max(value / 4, 1);
-}
-
-/** @brief Check if Griswold will buy this item. */
-bool SmithWillBuy(const Item &item)
-{
-	if (item.isEmpty())
-		return false;
-
-	// Oils are accepted
-	if (item._iMiscId > IMISC_OILFIRST && item._iMiscId < IMISC_OILLAST)
-		return true;
-
-	if (item._itype == ItemType::Misc)
-		return false;
-	if (item._itype == ItemType::Gold)
-		return false;
-	if (item._itype == ItemType::Staff && (!gbIsHellfire || IsValidSpell(item._iSpell)))
-		return false;
-	if (item._iClass == ICLASS_QUEST)
-		return false;
-	if (item.IDidx == IDI_LAZSTAFF)
-		return false;
-
-	return true;
-}
-
-/** @brief Check if Adria will buy this item. */
-bool WitchWillBuy(const Item &item)
-{
-	if (item.isEmpty())
-		return false;
-
-	bool rv = false;
-
-	if (item._itype == ItemType::Misc)
-		rv = true;
-	if (item._iMiscId > 29 && item._iMiscId < 41)
-		rv = false;
-	if (item._iClass == ICLASS_QUEST)
-		rv = false;
-	if (item._itype == ItemType::Staff && (!gbIsHellfire || IsValidSpell(item._iSpell)))
-		rv = true;
-	if (item.IDidx >= IDI_FIRSTQUEST && item.IDidx <= IDI_LASTQUEST)
-		rv = false;
-	if (item.IDidx == IDI_LAZSTAFF)
-		rv = false;
-
-	return rv;
 }
 
 /** @brief Rebuild the grid layout for the current vendor/tab. */
@@ -990,7 +919,7 @@ void CheckVisualStorePaste(Point mousePosition)
 
 	const Item soldItem = player.HoldItem;
 	// Calculate sell price
-	int sellPrice = GetSellPrice(soldItem);
+	int sellPrice = GetStoreSellPrice(soldItem);
 
 	// Add gold to player
 	AddGoldToInventory(player, sellPrice);
@@ -999,29 +928,14 @@ void CheckVisualStorePaste(Point mousePosition)
 	// Clear the held item
 	player.HoldItem.clear();
 	NewCursor(CURSOR_HAND);
-	AddItemToBuyback(VisualStore.vendor, soldItem);
+	AddItemToVendorBuyback(GetVisualStoreTalkId(VisualStore.vendor), soldItem);
 	pcursstoreitem = -1;
 	RefreshVisualStoreLayout();
 }
 
 bool CanSellToCurrentVendor(const Item &item)
 {
-	if (item.isEmpty())
-		return false;
-
-	switch (VisualStore.vendor) {
-	case VisualStoreVendor::Smith: {
-		return SmithWillBuy(item);
-	}
-	case VisualStoreVendor::Witch: {
-		return WitchWillBuy(item);
-	}
-	case VisualStoreVendor::Healer:
-	case VisualStoreVendor::Boy: {
-		return false;
-	}
-	}
-	return false;
+	return CanVendorBuyItem(GetVisualStoreTalkId(VisualStore.vendor), item);
 }
 
 void SellItemToVisualStore(int invIndex)
@@ -1039,7 +953,7 @@ void SellItemToVisualStore(int invIndex)
 
 	const Item soldItem = item;
 	// Calculate sell price
-	int sellPrice = GetSellPrice(soldItem);
+	int sellPrice = GetStoreSellPrice(soldItem);
 
 	// Add gold to player
 	AddGoldToInventory(player, sellPrice);
@@ -1047,7 +961,7 @@ void SellItemToVisualStore(int invIndex)
 
 	// Remove item from inventory
 	player.RemoveInvItem(invIndex);
-	AddItemToBuyback(VisualStore.vendor, soldItem);
+	AddItemToVendorBuyback(GetVisualStoreTalkId(VisualStore.vendor), soldItem);
 	pcursstoreitem = -1;
 	RefreshVisualStoreLayout();
 }
