@@ -4,12 +4,56 @@ description: Refactor render path into logical world/overlay/window/HUD stages
 
 # UI Scaling - Phase 1: Render Path Refactor
 
-**Cel:** Przygotować render path pod przyszłe skalowanie przez zgrupowanie draw calli w logiczne etapy, bez zmiany zachowania dla gracza.
+**Cel:** Make the existing render call order explicit and easier to evolve for future UI-scaling work, bez zmiany zachowania dla gracza.
+
+**Strategia commitów:** Podzielić implementację na 3 mini-commity dla łatwiejszego review:
+1. extract helpery z DrawView()
+2. extract RenderMainHudPanel() 
+3. cleanup nazw i komentarzy bez zmiany behavior
+
+## Non-goals / semantic guardrails
+- no gameplay changes
+- no input/hit-testing changes  
+- no save/load/state flag changes
+- no new render model
+- no surface separation
+- no movement of touch / present logic
+- no cross-file abstraction unless strictly necessary
+
+**Helper localization rule:** Helpery mają być lokalne dla scrollrt.cpp, jeśli to możliwe. Zamiast od razu robić nowe klasy, nowe moduły albo przenosić rzeczy między plikami:
+- wyciągasz helpery lokalnie w scrollrt.cpp
+- zachowujesz istniejący flow
+- nie robisz szerokiej abstrakcji, dopóki nie będzie realnie potrzebna
+
+**Path preservation rule:** PR1 must preserve the semantics of both the main frame path and the lightweight scrollrt_draw_game_screen() path. To odpowiada zasadzie "Audit the full pipeline" - nie patrz tylko na główną ścieżkę, sprawdź też boczne/pomocnicze ścieżki, które dotykają cursor/present. W aktualnym kodzie scrollrt_draw_game_screen() robi osobno UndrawCursor(out), DrawCursor(out), DrawMain(...) i RenderPresent().
+
+To pokazuje, że nie zgadujesz nowych mechanik, nie przeciążasz istniejących pojęć, i bierzesz najmniejszą semantycznie poprawną zmianę.
+
+## Definition of success
+**Expected visible outcome:**
+- no intended visual change
+- no intended input change  
+- no intended change in draw timing semantics
+- any visible ordering difference is a regression
+
+To jest bardzo mocne i bardzo dobre dla review - brutalnie proste kryteria sukcesu.
+
+## Implementation warnings
+**Jedyna realna rzecz, na którą bym uważał - nie w samym planie, tylko w wykonaniu:**
+
+Maintainerom może się nie spodobać, jeśli w trakcie implementacji PR1 niechcący zacznie robić coś z tych rzeczy:
+- przenosić odpowiedzialność między DrawView() a DrawAndBlit()
+- "upraszczać" redraw flags
+- ruszać scrollrt_draw_game_screen()
+- zmieniać semantykę debug/touch/present
+- wynosić helpery poza scrollrt.cpp bez realnej potrzeby
+
+To są exactly te rzeczy, które mogą spowodować reject PR.
 
 ## Scope
 - Zgrupowanie renderingu w logiczne etapy: world/overlay/window/HUD
 - Bez widocznych zmian dla użytkownika
-- Przygotowanie architektury pod future scaling
+- Make the existing render call order explicit and easier to evolve for future UI-scaling work
 - Bez rozdzielania surface'ów ani render targetów
 
 ## Kluczowe pliki
@@ -19,7 +63,7 @@ description: Refactor render path into logical world/overlay/window/HUD stages
 
 ## Funkcje do refactorowania
 - `DrawView()` - główny scene rendering pipeline
-- `DrawAndBlit()` - HUD composition i present pipeline
+- `DrawAndBlit()` - backbuffer composition before DrawMain()/RenderPresent()
 
 **Uwaga:** `DrawCursor()` i `RenderPresent()` pozostają poza zakresem etapu 1.
 
@@ -72,23 +116,23 @@ Nie masz dziś prostego podziału tylko na „świat" i „UI". Masz raczej:
 - HUD/top-most overlays
 - cursor
 
-I to jest właśnie dobra wiadomość, bo etap 1 nie musi od razu robić idealnej architektury. Wystarczy, że rozdzielisz to logicznie na wyższe passy, nawet jeśli nie wszystko od razu trafi do osobnych surface'ów.
+I to jest właśnie dobra wiadomość, bo etap 1 nie musi od razu robić idealnej architektury. Wystarczy, że rozdzielisz to logicznie na wyższe stages, nawet jeśli nie wszystko od razu trafi do osobnych surface'ów.
 
 ## 4. Moja robocza rozpiska do refactoru
 
 Ja bym to sobie zapisał dokładnie tak:
 
-### A. World pass
+### A. World stage
 `DrawGame`
 - `DrawGame(...)`
 - `DrawFloor(...)`
 - `DrawTileContent(...)`
 - `DrawOOB(...)`
-- opcjonalnie `Zoom(...)`
+- `Zoom(...)`
 
 **Uwaga:** World rendering już dziś jest panel-aware - zmniejsza viewport gdy lewy/prawy panel jest otwarty.
 
-### B. World overlay pass
+### B. World overlay stage
 `DrawAutomap`
 - `DrawAutomap(...)`
 - `DrawItemNameLabels(...)`
@@ -97,14 +141,17 @@ Ja bym to sobie zapisał dokładnie tak:
 
 **Charakter:** World-aware ale rysowane "na wierzchu" świata, przed panelami. Dodatkowo `DrawFloatingNumbers(out, startPosition, offset)` dostaje parametry świata, więc to bardzo mocno sugeruje warstwę world-aware, nie zwykły panel HUD. `DrawAutomap` też jest rysowany na subregionie viewportu, od razu po świecie.
 
-### C. Panel / modal UI pass
+### C. Panel / modal UI stage
 `DrawSText`
 - `DrawSText(...)` - sklep/rozmowy
 - `DrawInv(...)` - inventory
 - `DrawSpellBook(...)` - księga zaklęć
+- `DrawDurIcon(...)` - durability icon
 - `DrawChr(...)` - character panel
 - `DrawQuestLog(...)` - dziennik zadań
 - `DrawStash(...)` - stash
+- `DrawLevelButton(...)` - level button
+- `DrawUniqueInfo(...)` - unique info
 - `DrawQText(...)` - quest text
 - `DrawSpellList(...)` - lista zaklęć
 - `DrawGoldSplit(...)` - dzielenie złota
@@ -112,39 +159,34 @@ Ja bym to sobie zapisał dokładnie tak:
 - `DrawHelp(...)` - pomoc
 - `DrawChatLog(...)` - chat log
 
-**Charakter:** Klasyczne panele/okna. Widać to szczególnie po kilku pewnych przykładach:
-- `DrawSpellBook` używa `GetPanelPosition(UiPanels::Spell, ...)`, więc jest zakotwiczony do konkretnego panelu UI.
-- `DrawQTextBack` i `DrawHelp` bazują na `GetUIRectangle().position`, rysują tło textboxa i półprzezroczyste prostokąty, czyli są klasycznym ekranowym UI, nie warstwą świata.
-- `DrawSTextBack` też używa `GetUIRectangle().position` i półprzezroczystego tła dla store/talk panelu.
-- `DrawChatLog` używa `DrawQTextBack(out)` i `GetUIRectangle()`, czyli to kolejny pełnoekranowy panel UI.
+**Charakter:** To są klasyczne panele UI. `DrawSTextBack` też używa `GetUIRectangle().position` i półprzezroczystego tła dla store/talk panelu.
+`DrawChatLog` używa `DrawQTextBack(out)` i `GetUIRectangle()`, czyli to kolejny pełnoekranowy panel UI.
 
-### D. Top overlay / HUD pass
+### D. Top overlay / HUD stage
 death / pause
 - Death/Pause screens
 - `DrawDiabloMsg(...)`
 - `DrawControllerModifierHints(...)`
-- `DrawPlrMsg(...)` - wiadomości gracza (panel-aware!)
-- `gmenu_draw(...)` - menu gry
-- `doom_draw(...)` - doom screen
+- `DrawPlrMsg(...)`
+- `gmenu_draw(...)`
+- `doom_draw(...)`
 - `DrawInfoBox(...)`
 - `UpdateLifeManaPercent()`
 - `DrawLifeFlaskUpper(...)`
 - `DrawManaFlaskUpper(...)`
 
-**Charakter:** Zawsze na wierzchu, często panel-aware. Tu szczególnie ciekawy jest `DrawPlrMsg(...)`, bo to nie jest zwykły modal. Funkcja pozycjonuje wiadomości nad głównym panelem i dodatkowo zmienia szerokość obszaru, gdy lewy albo prawy panel jest otwarty. To jest bardzo mocny kandydat na hybrid HUD overlay - ekranowy, ale panel-aware.
-
-Końcówka z `UpdateLifeManaPercent()` i potem `DrawLifeFlaskUpper` / `DrawManaFlaskUpper` sugeruje, że flaszki są świadomie traktowane jako bardzo późna warstwa końcowa. Komentarz mówi wprost, że life/mana totals są aktualizowane przed renderem części flaszki.
+**Charakter:** To jest późny overlay, ale wciąż część DrawView().
 
 ### E. Cursor boundary handling
 `UndrawCursor(...)` - before redraw
 `DrawCursor(...)` - after HUD composition, before `DrawMain(...)`
 
-**Charakter:** To nie jest jeden zwarty pass, tylko dwie graniczne operacje:
+**Charakter:** To nie jest jeden zwarty stage, tylko dwie graniczne operacje:
 - `UndrawCursor()` jest pre-frame restore step
 - `DrawCursor()` jest late post-HUD draw
 - `RenderPresent()` jest jeszcze później
 
-**Architektoniczna uwaga:** Nie tworzą jednego zwykłego passa, więc nie powinny być nazywane "Cursor pass" czy "RenderCursorFrame()".
+**Architektoniczna uwaga:** Nie tworzą jednego zwykłego stage, więc nie powinny być nazywane "Cursor stage" czy "RenderCursorFrame()".
 
 To nie musi być finalna architektura. Ale jako mini-notes przed etapem 1 - to już jest bardzo sensowna mapa.
 
@@ -156,9 +198,9 @@ To są miejsca, gdzie bym najbardziej uważał:
 - Najważniejsze ryzyko - przypadkowe zmiany kolejności rysowania
 - Musi być zachowana dokładna sekwencja z `DrawView()`
 
-### Cursor - szczególnie jeśli część kursora jest software, a część hardware
+### Cursor sync issues
+- DrawCursor()/UndrawCursor() muszą pozostać na obecnej boundary pozycji - poza DrawView(), po main HUD composition i przed DrawMain()
 - Helpery kursora siedzą obok głównego pipeline'u
-- `DrawCursor` / `UndrawCursor` muszą pozostać jako ostatnia warstwa
 
 ### Item labels / chat / console / info overlays - one często są na pograniczu "czy to jeszcze świat czy już UI"
 - `DrawItemNameLabels` - world overlay ale może być traktowane jako UI
@@ -171,7 +213,7 @@ To są miejsca, gdzie bym najbardziej uważał:
 
 ### Inventory / spellbook / stores / help - bo to już mocno UI-centric
 - Wszystkie używają `GetPanelPosition()` lub `GetUIRectangle()`
-- Muszą pozostać w UI pass
+- Muszą pozostać w UI stage
 
 ### Fade / palette / clipping - jeśli jakiś efekt zakłada konkretną kolejność rysowania
 - Efekty visual mogą zakładać określoną kolejność warstw
@@ -216,7 +258,7 @@ To, co naprawdę składa pełną klatkę, siedzi w `DrawAndBlit()`. Tam kolejno�
 `Source/panels/mainpanel.cpp` wygląda bardziej na przygotowanie assetów panelu, a nie główny runtime render frame-by-frame. Tam widać pre-render tłumaczonych stanów przycisków do `PanelButtonDown`, a nawet rysowanie pewnych przycisków do `BottomBuffer` podczas ładowania zasobów. To mocno sugeruje: ten plik przygotowuje elementy panelu, ale nie jest centralnym miejscem składania każdej klatki.
 
 ### Wniosek do etapu 1
-Jeśli chcesz rozdzielać render na passy, to punktem cięcia nie powinno być `DrawMain()`. Punktem cięcia powinno być `DrawAndBlit()`, bo to ono naprawdę układa frame pipeline.
+Jeśli chcesz rozdzielać render na stages, to punktem cięcia nie powinno być `DrawMain()`. Punktem cięcia powinno być `DrawAndBlit()`, bo to ono naprawdę układa frame pipeline.
 
 ## 7. Checklist do etapu 1
 
@@ -224,33 +266,32 @@ Jeśli chcesz rozdzielać render na passy, to punktem cięcia nie powinno być `
 
 ### A. Najpierw rozdziel to mentalnie na 4 warstwy
 
-#### 1. World pass
+#### 1. World stage
 To, co jest czystym światem:
 - `DrawGame(...)`
 
-To jest najczystszy kandydat na osobny pass. `DrawGame()` robi floor, tile content, out-of-bounds i zoom. Dodatkowo już dziś jest panel-aware, bo uwzględnia zasłanianie viewportu przez panele boczne.
+To jest najczystszy kandydat na osobny stage. `DrawGame()` robi floor, tile content, out-of-bounds i zoom. Dodatkowo już dziś jest panel-aware, bo uwzględnia zasłanianie viewportu przez panele boczne.
 
-#### 2. World overlay pass
+#### 2. World overlay stage
 Rzeczy jeszcze związane z widokiem gry, ale już nad światem:
 - `DrawAutomap(...)`
-- debug grid / debug text
 - `DrawItemNameLabels(...)`
 - `DrawMonsterHealthBar(...)`
 - `DrawFloatingNumbers(...)`
 
 To wszystko dzieje się zaraz po `DrawGame()` i przed oknami/panelami.
 
-#### 3. Window / panel UI pass
+#### 3. Window / panel UI stage
 Okna i większe panele:
 - `DrawSText(...)`
 - `DrawInv(...)`
 - `DrawSpellBook(...)`
-- `DrawDurIcon(...)` ← przeniesione z HUD pass
+- `DrawDurIcon(...)` ← przeniesione z HUD stage
 - `DrawChr(...)`
 - `DrawQuestLog(...)`
 - `DrawStash(...)`
-- `DrawLevelButton(...)` ← przeniesione z HUD pass
-- `DrawUniqueInfo(...)` ← przeniesione z HUD pass
+- `DrawLevelButton(...)` ← przeniesione z HUD stage
+- `DrawUniqueInfo(...)` ← przeniesione z HUD stage
 - `DrawQText(...)`
 - `DrawSpellList(...)`
 - `DrawGoldSplit(...)`
@@ -268,9 +309,9 @@ To jest sensowna grupa, bo te rzeczy są klasycznym UI. Sklep używa wspólnego 
 5. `DrawUniqueInfo`
 6. dopiero potem reszta
 
-**Uwaga:** Nazwa helpera to `RenderWindowPanels()`, nie `RenderUiPass()`, bo to jeszcze nie jest docelowy UI pass w sensie osobnego surface'a - tylko porządkowanie draw calli.
+**Uwaga:** Nazwa helpera to `RenderWindowPanels()`, bo to jeszcze nie jest docelowy UI stage w sensie osobnego surface'a - tylko porządkowanie draw calli.
 
-#### 4. HUD / top overlay pass
+#### 4. HUD / top overlay stage
 To, co jest późnym overlayem:
 - death / pause overlay
 - `DrawDiabloMsg(...)`
@@ -285,7 +326,7 @@ To, co jest późnym overlayem:
 
 `DrawPlrMsg()` jest tu dobrym przykładem hybrydy - jest ekranowe, ale liczy szerokość i pozycję względem main panelu oraz side paneli.
 
-### B. Osobno wydziel "main panel composition pass"
+### B. Osobno wydziel "main panel composition stage"
 Ta grupa nie należy do `DrawMain()`, tylko do runtime składania backbuffera w `DrawAndBlit()`:
 - `DrawMainPanel(out)`
 - `DrawLifeFlaskLower(...)`
@@ -299,9 +340,9 @@ Ta grupa nie należy do `DrawMain()`, tylko do runtime składania backbuffera w 
 - `DrawFloatingInfoBox(out)`
 - `DrawPartyMemberInfoPanel(out)`
 
-To jest praktycznie osobny pass: main panel shell + jego elementy + dolny HUD. Belt też jest wyraźnie zakotwiczony do `GetMainPanel().position`.
+To jest praktycznie osobny stage: main panel shell + jego elementy + dolny HUD. Belt też jest wyraźnie zakotwiczony do `GetMainPanel().position`.
 
-**Moja rada:** nazwij to sobie roboczo np. `RenderMainHudPanel()`. Bo to nie jest ani czysty world pass, ani zwykłe modalne okno.
+**Moja rada:** nazwij to sobie roboczo np. `RenderMainHudPanel()`. Bo to nie jest ani czysty world stage, ani zwykłe modalne okno.
 
 ### C. DrawMain() zostaw na razie w spokoju
 Na etapie 1 nie próbuj go "naprawiać" ani zmieniać semantyki.
@@ -319,7 +360,7 @@ To zmniejszy ryzyko. `DrawMain()` jest dziś ważne dla częściowego odświeża
 #### scrollrt.cpp
 - wyciągnąć z `DrawView()` helper `RenderWorldPass(...)`
 - wyciągnąć helper `RenderWorldOverlays(...)` z parametrami world data
-- wyciągnąć helper `RenderWindowPanels(...)`  ← nazwa zmieniona z `RenderUiPass`
+- wyciągnąć helper `RenderWindowPanels(...)`  ← nazwa zmieniona z `RenderUiStage`
 - wyciągnąć helper `RenderTopOverlays(...)`
 - w `DrawAndBlit()` wyciągnąć helper `RenderMainHudPanel(...)` z flagami redrawu
 - zachować identyczną kolejność draw calls
@@ -350,7 +391,7 @@ To jest najważniejszy plik etapu 1.
 - `DrawChatLog()` też siada na `DrawQTextBack(...)`, więc to nie jest HUD tylko okno/panel.
 
 #### plrmsg.cpp
-- zostawić w top overlay / HUD pass
+- zostawić w top overlay / HUD stage
 - oznaczyć jako hybrid HUD, bo zależy od main panelu i side paneli
 - nic nie zmieniać w timeoucie ani layout policy
 
@@ -392,14 +433,14 @@ To wszystko powinno wejść dopiero później. Z samej struktury `DrawAndBlit()`
 **Mała korekta do nazewnictwa:**
 
 Ja bym nawet rozważył nazwę:
-- `RenderWindowPanels` zamiast `RenderUiPass`
+- `RenderWindowPanels` zamiast `RenderUiStage`
 
-Bo na tym etapie to jeszcze nie jest docelowy UI pass w sensie architektury osobnego surface'a. To po prostu porządkowanie draw calli. Dzięki temu opis PR-a będzie uczciwy.
+Bo na tym etapie to jeszcze nie jest docelowy UI stage w sensie architektury osobnego surface'a. To po prostu porządkowanie draw calli. Dzięki temu opis PR-a będzie uczciwy.
 
 **Ostateczne nazwy helperów:**
 - `RenderWorldPass(...)`
 - `RenderWorldOverlays(...)`
-- `RenderWindowPanels(...)`  ← zmienione z `RenderUiPass`
+- `RenderWindowPanels(...)`  ← zmienione z `RenderUiStage`
 - `RenderTopOverlays(...)`
 - `RenderMainHudPanel(...)`
 
@@ -429,31 +470,31 @@ Etap 1 nie ma jeszcze rozdzielać surface'ów. Ma tylko sprawić, że z kodu bę
 - nie dotykaj hit-testingu, tooltipów, controller navigation
 - nie mieszaj touch/gamepad renderingu do backbuffera
 
-**To ostatnie jest istotne, bo virtual gamepad ma własne API renderujące dla `SDL_Renderer*` i `SDL_Surface*`, a jego render jest dopinany przy present, nie w głównym world/UI passie.**
+**To ostatnie jest istotne, bo virtual gamepad ma własne API renderujące dla `SDL_Renderer*` i `SDL_Surface*`, a jego render jest dopinany przy present, nie w głównym world/UI stage'u.**
 
 ## 8. Touch/Mobile i Virtual Gamepad - Important Finding
 
 ### Touch/Mobile nie wchodzi w DrawView() ani DrawAndBlit()
 Mam już ważny wynik: touch/mobile nie wchodzi w `DrawView()` ani `DrawAndBlit()` jako zwykły draw call do backbuffera. Virtual gamepad jest doklejany dopiero w `RenderPresent()`, więc to mocny argument, żeby zostawić present path poza etapem 1.
 
-**Do sprawdzenia:** To oznacza, że touch/mobile rendering jest całkowicie oddzielony od głównego pipeline'u renderowania gry i jest dodawany na samym końcu procesu prezentacji.
+**To oznacza, że touch/mobile rendering jest całkowicie oddzielony od głównego pipeline'u renderowania gry i jest dodawany na samym końcu procesu prezentacji.**
 
 ### Implikacje dla etapu 1
 - ✅ Wzmacnia to decyzję, żeby nie dotykać `DrawMain()` i `RenderPresent()` w etapie 1
 - ✅ Potwierdza, że `DrawAndBlit()` jest właściwym punktem cięcia dla refactoru
 - ✅ Touch/mobile jest już naturalnie oddzielony od głównego render pipeline
-- ✅ Nie ma ryzyka, że refactor etapu 1 wpłynie na touch/mobile controls
+- ✅ Touch/mobile should remain unaffected as long as RenderPresent() and virtual gamepad rendering stay untouched
 
 ### Dlaczego to jest ważne
-Touch/mobile controls często mają swoje własne systemy renderowania i mogą używać innych surface'ów lub technik kompozycji. Fakt, że są doklejane dopiero w `RenderPresent()`, oznacza że:
+Virtual gamepad rendering is appended during RenderPresent() and should remain unaffected as long as RenderPresent() and virtual gamepad rendering stay untouched. Touch/mobile controls często mają swoje własne systemy renderowania i mogą używać różnych surface'ów lub technik kompozycji. Fakt, że są doklejane dopiero w `RenderPresent()`, oznacza że:
 1. Są renderowane po głównym frame bufferze gry
 2. Mają niezależny pipeline od UI scaling
-3. Nie będą affected przez refactor render passes
+3. Touch/mobile should remain unaffected as long as RenderPresent() and virtual gamepad rendering stay untouched
 
 ### Action items dla etapu 1
 - Potwierdzić, że `RenderPresent()` nie jest zmieniany
 - Upewnić się, że touch/mobile pozostaje poza zakresem etapu 1
-- Dodać notatkę w PR description, że touch/mobile should remain unaffected as long as RenderPresent() and virtual gamepad rendering are left untouched
+- Dodać notatkę w PR description, że touch/mobile should remain unaffected as long as RenderPresent() and virtual gamepad rendering stay untouched
 
 ## 10. Kolejność w DrawView() - trzeba zachować 1:1
 
@@ -463,7 +504,7 @@ Touch/mobile controls często mają swoje własne systemy renderowania i mogą u
 2. policzyć offset przez `CalcFirstTilePosition(startPosition, offset)`,
 3. narysować świat przez `DrawGame(out, startPosition, offset)`,
 4. jeśli automapa jest aktywna - narysować automapę,
-5. w debug buildzie - narysować debug grid / debug text,
+5. w debug buildzie - narysować debug grid / debug text / RedrawEverything(),
 6. narysować item labels,
 7. narysować monster health bar,
 8. narysować floating numbers,
@@ -497,19 +538,19 @@ Touch/mobile controls często mają swoje własne systemy renderowania i mogą u
 ```cpp
 void DrawView(Surface &out, Point startPosition) {
     // Setup
-    ClearDebugMapCoordinates();
+    ClearDebugMapCoordinates();  // pseudocode only - helper name illustrative, current code uses DebugCoordsMap.clear()
     CalcFirstTilePosition(startPosition, offset);
     
-    // World pass
+    // World stage
     RenderWorldPass(out, startPosition, offset);
     
-    // World overlay pass  
+    // World overlay stage  
     RenderWorldOverlays(out, startPosition, offset);  ← UWAGA: potrzebuje world data!
     
-    // Window panels pass
+    // Window panels stage
     RenderWindowPanels(out);
     
-    // Top overlay pass
+    // Top overlay stage
     RenderTopOverlays(out);
 }
 ```
@@ -574,7 +615,7 @@ void DrawAndBlit() {
     // Main frame rendering
     DrawView(out, ViewPosition);
     
-    // Main HUD panel pass
+    // Main HUD panel stage
     RenderMainHudPanel(out, drawCtrlPan, drawHealth, drawMana, drawControlButtons, drawBelt, drawChatInput);
     
     // Post-frame elements
@@ -593,7 +634,7 @@ void DrawAndBlit() {
 **Gdzie `RenderMainHudPanel()` przyjmuje flagi redrawu i zawiera kroki 7-17:**
 - `DrawMainPanel(out)` (jeśli `drawCtrlPan`)
 - dolna część flaszki życia (jeśli `drawHealth`)
-- dolna część flaszki many + `DrawSpell(out)` (jeśli `drawMana`)
+- dolna część flaszki many + `DrawSpell(out)` (jeśli `drawMana`) ← **ważne: DrawSpell musi pozostać sprzężone z drawMana**
 - `DrawMainPanelButtons(out)` (jeśli `drawControlButtons`)
 - `DrawInvBelt(out)` (jeśli `drawBelt`)
 - `DrawChatBox(out)` (jeśli `drawChatInput`)
@@ -606,6 +647,7 @@ void DrawAndBlit() {
 - `DrawMain()` - partial blit logic
 - `RenderPresent()` - final present + touch/gamepad
 - `DrawCursor()` / `UndrawCursor()` - cursor handling
+- `DrawConsole(out)` - zostaje tam, gdzie jest dziś, tylko w _DEBUG, po DrawMain(...), przed bookkeepingiem i RenderPresent()
 - Flagi redrawu - zostają jak są
 
 ### Dodatkowa uwaga: scrollrt_draw_game_screen()
@@ -632,7 +674,7 @@ DrawAndBlit() -> setup / UndrawCursor -> DrawView() -> main HUD composition -> D
 **Czyli w praktyce:**
 
 - nie przenosisz `DrawCursor(out)` do `DrawView()`, bo dziś jest rysowany dopiero po HUD-zie i przed `DrawMain(...)`
-- nie przenosisz `DrawMain(...)` do środka nowego passa, bo to jest już etap blit/present logic, a nie zwykłe malowanie sceny
+- nie przenosisz `DrawMain(...)` do środka nowego stage, bo to jest już etap blit/present logic, a nie zwykłe malowanie sceny
 - nie ruszasz `RenderPresent()`, bo to finalny koniec pipeline'u
 
 **Te granice definiują:**
@@ -671,37 +713,34 @@ DrawAndBlit()
        -> RenderWindowPanels()
        -> RenderTopOverlays()
   -> RenderMainHudPanel()
-  -> DrawCursor()
-  -> DrawFPS()
-  -> lua::GameDrawComplete()
-  -> DrawMain(...)
-  -> debug console
-  -> redraw bookkeeping
+  -> DrawCursor() / DrawFPS() / lua hook
+  -> DrawMain() / DrawConsole() / bookkeeping
   -> RenderPresent()
 ```
 
-**To jest już prawie 1:1 odpowiadające temu, co jest dziś w kodzie, z podziałem na logiczne helpery.**
-
-## World Pass
+## World Stage
 - `DrawGame(...)`
 - `DrawFloor(...)`
 - `DrawTileContent(...)`
 - `DrawOOB(...)`
 - `Zoom(...)`
 
-## World Overlay Pass
+## World Overlay Stage
 - `DrawAutomap(...)`
 - `DrawItemNameLabels(...)`
 - `DrawMonsterHealthBar(...)`
 - `DrawFloatingNumbers(...)`
 
-## Panel/Modal UI Pass
+## Window/Panel Stage
 - `DrawSText(...)` - sklep/rozmowy
 - `DrawInv(...)` - inventory
 - `DrawSpellBook(...)` - księga zaklęć
+- `DrawDurIcon(...)` - durability icon
 - `DrawChr(...)` - character panel
 - `DrawQuestLog(...)` - dziennik zadań
 - `DrawStash(...)` - stash
+- `DrawLevelButton(...)` - level button
+- `DrawUniqueInfo(...)` - unique item info
 - `DrawQText(...)` - quest text
 - `DrawSpellList(...)` - lista zaklęć
 - `DrawGoldSplit(...)` - dzielenie złota
@@ -709,7 +748,7 @@ DrawAndBlit()
 - `DrawHelp(...)` - pomoc
 - `DrawChatLog(...)` - chat log
 
-## Top Overlay/HUD Pass
+## Top Overlay/HUD Stage
 - Death/Pause screens
 - `DrawDiabloMsg(...)`
 - `DrawControllerModifierHints(...)`
@@ -750,14 +789,14 @@ Summary: Refactor render path into logical world / overlay / window / HUD stages
 No intended behavior change - preparatory step for future UI scaling
 
 What changed:
-- Grouped world rendering into dedicated pass
-- Grouped world overlays into dedicated pass  
-- Grouped UI panels into dedicated pass
-- Grouped top overlays into dedicated pass
+- Grouped world rendering into dedicated stage
+- Grouped world overlays into dedicated stage  
+- Grouped UI panels into dedicated stage
+- Grouped top overlays into dedicated stage
 - Centralized frame composition order
 - Added RenderMainHudPanel() helper for bottom panel composition
 
-This phase does not separate UI and world into different surfaces. It only makes the existing call order explicit and easier to evolve.
+This phase does not separate UI and world into different surfaces. It only makes the existing call order explicit and easier to evolve for future UI-scaling work.
 
 Why:
 - Issue #8300 shows real readability problems at higher resolutions
