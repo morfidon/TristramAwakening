@@ -16,28 +16,40 @@ Wprowadzić niezależne skalowanie UI i świata gry zgodnie z kierunkiem z issue
 
 ## Plan etapowy
 
+### Etap 0: Local render pipeline verification
+**Cel:** Przygotowanie prywatnego narzędzia weryfikacyjnego
+- Lokalny mechanizm logowania render pipeline event order
+- Weryfikacja że refactoring nie zmienia kolejności renderowania
+- Prywatne narzędzie - nie wchodzi do upstream
+- Szacowany czas: 0.5 dnia
+
 ### Etap 1: Refactor render path
-**Cel:** Przygotowanie architektury pod przyszłe skalowanie
-- Podzielenie renderingu na world/UI passes
-- Bez widocznych zmian dla użytkownika
+**Cel:** Podzielenie renderingu na logiczne warstwy bez zmiany zachowania
+- Wydzielenie helperów: `RenderWorldPass()`, `RenderWorldOverlays()`, `RenderWindowPanels()`, `RenderTopOverlays()`, `RenderMainHudPanel()`
+- Zachowanie dokładnej kolejności draw calls z `DrawView()` i `DrawAndBlit()`
+- Bez widocznych zmian dla użytkownika, bez zmiany inputu, surface'ów ani render targetów
 - Szacowany czas: 2-3 dni
 
 ### Etap 2: Logical UI coordinates
 **Cel:** Przygotowanie systemu współrzędnych pod skalowanie
-- Centralizacja mapowania ekran → logical UI space
-- Przygotowanie hitboxów i input systemu
+- Prepare UI-space mapping
+- UI coordinate mapping + UI hit-testing prep
+- Exact behavior TBD after maintainer feedback
 - Szacowany czas: 2-3 dni
 
 ### Etap 3: Internal UI scale factor
 **Cel:** Wprowadzenie mechanizmu skalowania
-- Scale factor z clampingiem (0.8-2.0)
-- Anchoring system
+- Introduce internal scale plumbing
+- Internal UI scale factor with clamping
+- Exact bounds TBD based on layout fit and maintainer feedback
+- Anchoring system (exact behavior TBD)
 - Config-only (developerska opcja)
 - Szacowany czas: 3-4 dni
 
 ### Etap 4: Public UI scale presets
 **Cel:** Eksponowanie funkcji dla użytkowników
-- 3 bezpieczne presety: Normal/Large/Larger
+- Expose a safe user-facing UI scaling control
+- Safe user-facing presets (exact preset count and allowed scale values TBD based on layout fit)
 - Safety validation dla rozdzielczości
 - Integration z options menu
 - Szacowany czas: 2-3 dni
@@ -50,6 +62,13 @@ Wprowadzić niezależne skalowanie UI i świata gry zgodnie z kierunkiem z issue
 - Edge case handling
 - Szacowany czas: 4-5 dni
 
+### Etap 6: World zoom / perspective policy discussion
+**Cel:** Oddzielenie dyskusji o world zoom od UI scaling
+- Separate discussion from UI scaling
+- Decide whether #8388 balance proposals are desired
+- Only then plan implementation
+- Szacowany czas: 1-2 dni (discussion only)
+
 ## Dlaczego etapowe podejście?
 
 1. **Małe ryzyko** - Każdy PR jest reviewable i łatwy do cofnięcia
@@ -59,9 +78,10 @@ Wprowadzić niezależne skalowanie UI i świata gry zgodnie z kierunkiem z issue
 
 ## Kluczowe pliki do analizy
 
-- `Source/engine/render/scrollrt.cpp` - główny render pipeline
-- `Source/DiabloUI/` - panele i interfejs
-- `Source/controls/` - controller navigation
+- `Source/engine/render/scrollrt.cpp` - centrum etapów 1-3 (render path refactor, coordinates, scale plumbing)
+- `Source/DiabloUI/` - panele i interfejs (głównie od etapu 4 wzwyż)
+- `Source/panels/` - panele UI (głównie od etapu 4 wzwyż)
+- `Source/controls/` - controller navigation (tylko gdy realnie wejdziesz w controller navigation)
 - `Source/control/` - input handling
 
 ## Integration z istniejącym kodem
@@ -73,8 +93,12 @@ DrawGame() → DrawView() → [world → overlays → panels → HUD]
 
 ### Docelowa struktura
 ```
-RenderWorldFrame() → RenderWorldOverlayFrame() → 
-RenderUiFrame() → RenderTopOverlayFrame() → RenderCursorFrame()
+DrawAndBlit() 
+  → setup & UndrawCursor 
+  → DrawView() [RenderWorldPass → RenderWorldOverlays → RenderWindowPanels → RenderTopOverlays] 
+  → RenderMainHudPanel() 
+  → DrawCursor() 
+  → DrawMain() & RenderPresent()
 ```
 
 ## Safety considerations

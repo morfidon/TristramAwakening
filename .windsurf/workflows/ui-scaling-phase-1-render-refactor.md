@@ -50,6 +50,14 @@ Maintainerom może się nie spodobać, jeśli w trakcie implementacji PR1 niechc
 
 To są exactly te rzeczy, które mogą spowodować reject PR.
 
+**Implementation notes for helper signatures:**
+
+**RenderWorldOverlays z parametrami:**
+Zostawiasz sygnatury dokładnie takie, jak wynikają z aktualnych call sites. Jeśli DrawFloatingNumbers dziś bierze startPosition i offset, to helper też je bierze - mechanicznie. W PR description piszesz wprost: "RenderWorldOverlays takes world-space parameters because DrawFloatingNumbers is world-aware - this matches existing call semantics." Maintainer widzi, że nie wymyślasz, tylko opisujesz to, co już tam jest.
+
+**Warunkowa logika w RenderWindowPanels:**
+Też zostawiasz 1:1. W opisie PR-a lub w komentarzu do kodu możesz dodać: "Conditional logic preserved as-is from DrawView() - no behavior change intended." To sygnalizuje, że widziałeś ten chaos i świadomie go nie ruszałeś.
+
 ## Scope
 - Zgrupowanie renderingu w logiczne etapy: world/overlay/window/HUD
 - Bez widocznych zmian dla użytkownika

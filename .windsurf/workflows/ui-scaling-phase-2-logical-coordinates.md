@@ -1,73 +1,56 @@
 ---
-description: Implement logical UI coordinates for hit-testing and input
+description: Mouse/UI hit-testing logical coordinates (local-first approach)
 ---
 
-# UI Scaling - Phase 2: Logical UI Coordinates
+# UI Scaling - Phase 2: Mouse/UI Hit-Testing Logical Coordinates
 
-**Cel:** Przygotować system współrzędnych UI pod przyszłe skalowanie bez zmiany zachowania.
+**Cel:** Wydzielić wspólny mapping screen-space → logical UI point dla klasycznego mouse/UI hit-testingu, bez zmiany widocznego zachowania i bez narzucania wspólnego modelu dla wszystkich inputów.
 
-## Scope
-- Centralizacja mapowania ekran → logical UI space
-- Przygotowanie hitboxów i input systemu
-- Bez widocznych zmian dla użytkownika
+## Scope (zawężony do in-game UI)
+- **Tylko** mouse/UI hit-testing dla **in-game UI**: panels, buttons, inventory slots, spell icons
+- **DiabloUI audit-only** - main menu, character creation, multiplayer menu są osobnym kontekstem
+- Lokalny helper blisko miejsca użycia (nie nowy subsystem)
+- Mapping przy implicit scale = 1 (bez parametru skali)
+- Audit controller/touch/tooltip contexts (bez forced unification)
 
-## Kluczowe pliki
-- `Source/engine/ui/coordinate_mapper.h/.cpp` - nowy system
-- `Source/control/` - mouse input processing
-- `Source/controls/` - controller input
-- `Source/DiabloUI/` - UI tooltip system
+## Kluczowe pliki do zbadania
+- `Source/control/` - mouse input processing (control_panel.cpp, control_gold.cpp, etc.)
+- `Source/panels/` - panel system (inventory, spellbook, etc.)
+- `Source/DiabloUI/` - **audit only** (main menu, character creation - osobny kontekst)
+- `Source/controls/` - **audit only** (gamepad-centric, nie zakładaj shared rule)
 
-## Problem do rozwiązania
-- Input używa bezpośrednich współrzędnych ekranowych
-- Tooltipy pozycjonują się w screen space
-- Controller focus operuje na pikselach
-- Brak centralnego punktu transformacji współrzędnych
+## Problem do rozwiązania (zawężony)
+- Mouse/UI hit-testing używa bezpośrednich współrzędnych ekranowych
+- Brak jednego wspólnego punktu transformacji screen → UI logical point
+- Klasyczne UI elementy (panels, buttons, inventory) używają tego samego wzorca
 
-## Docelowa architektura
+## Docelowa architektura (minimalna)
 ```cpp
-struct LogicalUiPoint {
-    int x, y;  // Współrzędne w logical UI space
+// Prosta struktura - nie pełny system
+struct UiPoint {
+    int x, y;  // Współrzędne w logical UI space (scale = 1)
 };
 
-struct LogicalUiRect {
-    int x, y, w, h;  // Prostokąt w logical UI space
-};
-
-class UiCoordinateMapper {
-public:
-    LogicalUiPoint ScreenToLogical(int screenX, int screenY) const;
-    int LogicalToScreenX(int logicalX) const;
-    int LogicalToScreenY(int logicalY) const;
-    void TransformHitbox(const LogicalUiRect& logicalRect, ScreenRect& screenRect) const;
-    void UpdateScale(float uiScale);  // Dla przyszłych etapów
-};
+// Lokalny helper - nie globalny system
+namespace UiHitTesting {
+    UiPoint ScreenToUiPoint(int screenX, int screenY);
+    // Brak UpdateScale() - to jest w etapie 3
+    // Brak TransformHitbox() - prosty mapping point-to-point
+}
 ```
 
-## Miejsca do refaktoryzacji
+## Miejsca do refaktoryzacji (tylko mouse/UI hit-testing)
+- Panel click detection (Source/control/)
+- Inventory slot selection (Source/panels/ / Source/inv.cpp)
+- Spell/icon clicking (Source/panels/ / Source/control/)
+- In-game button hit testing (Source/panels/ / Source/control/)
 
-### Input System
-- Mouse click handling
-- Mouse motion tracking
-- Touch input (jeśli istnieje)
-- Controller button mapping
+### Contexts to Audit (nie refactor w etapie 2)
+- **Controller navigation** - sprawdź czy pixel-based czy selection-based
+- **Touch input** - sprawdź czy używa tego samego wzorca co mouse
+- **Tooltip placement** - sprawdź czy potrzebuje tego samego mappingu
 
-### Tooltip System
-- Tooltip positioning
-- Tooltip anchoring to UI elements
-- Tooltip bounds checking
-
-### Controller Navigation
-- Focus rectangle positioning
-- Directional navigation calculations
-- Button hitbox mapping
-
-### UI Element Hit Testing
-- Panel click detection
-- Button hit testing
-- Inventory slot selection
-- Spell icon clicking
-
-## Przykładowy refactor
+## Przykładowy refactor (minimalny)
 
 ### Przed:
 ```cpp
@@ -81,44 +64,53 @@ void OnMouseClick(int screenX, int screenY) {
 ### Po:
 ```cpp
 void OnMouseClick(int screenX, int screenY) {
-    auto logicalPoint = coordMapper.ScreenToLogical(screenX, screenY);
-    if (IsPointInLogicalRect(logicalPoint.x, logicalPoint.y, buttonLogicalRect)) {
+    auto uiPoint = UiHitTesting::ScreenToUiPoint(screenX, screenY);
+    if (IsPointInRect(uiPoint.x, uiPoint.y, buttonRect)) {
         // Handle click
     }
 }
 ```
 
-## Kryteria ukończenia
-- [ ] Wszystkie UI input używa logical coordinates
-- [ ] Tooltipy pozycjonują się w logical space
-- [ ] Controller navigation używa logical space
-- [ ] Centralny mapper dla transformacji współrzędnych
-- [ ] `UiCoordinateMapper::UpdateScale()` przygotowany (ale nie używany)
-- [ ] Kliknięcia działają identycznie jak wcześniej
-- [ ] Tooltipy pojawiają się w tych samych miejscach
-- [ ] Controller focus działa identycznie
-- [ ] Inventory slot selection działa bez zmian
-- [ ] Panel clicking działa bez zmian
+## Kryteria ukończenia (realistyczne i reviewable)
+- [ ] Istnieje jeden jawny punkt transformacji screen-space → UI logical point dla mouse/UI hit-testingu
+- [ ] Panel clicking działa identycznie jak wcześniej
+- [ ] Inventory slot selection działa identycznie jak wcześniej  
+- [ ] Button hit testing działa identycznie jak wcześniej
+- [ ] Brak widocznych zmian dla użytkownika
+- [ ] Controller navigation został zmapowany i oceniony (ale nie musi używać wspólnego helpera)
+- [ ] Tooltip placement został zaudytowany (ale nie musi używać wspólnego helpera)
+- [ ] Brak zmiany semantyki inputu świata gry
 
-## Ryzyka
-- Performance - dodatkowe transformacje przy każdym input event
-- Complexity - wiele miejsc używających współrzędnych
-- Edge cases - boundary conditions przy transformacji
-- Controller vs mouse - różne systemy muszą być spójne
+## Non-goals (explicit)
+- **Bez zmian** world-space gameplay input
+- **Bez założenia** że controller navigation używa tej samej reguły co mouse hit-testing
+- **Bez wymuszania** unifikacji wszystkich UI coordinate consumers
+- **Bez publicznych** scaling controls
+- **Bez parametru** scale (to jest w etapie 3)
+- **Bez rewrite** tooltip system bez dowodu że używa tej samej reguły
 
-## Czego NIE robić
-- Nie dodawać jeszcze publicznego UI scale
-- Nie zmieniać domyślnego zachowania
-- Nie optymalizować przedwcześnie
-- Nie mieszać inputu gry (movement) z UI input
+## Ryzyka (zawężone)
+- Performance - dodatkowe transformacje przy mouse events
+- Complexity - wiele miejsc używających współrzędnych w UI
+- Edge cases - boundary conditions przy prostym mappingu
 
-## Szacowany czas: 2-3 dni
+## Czego NIE robić w etapie 2
+- **Nie ruszać** world input (movement, camera)
+- **Nie wymuszać** wspólnego mappera dla gamepad/touch bez dowodu
+- **Nie dodawać** UpdateScale() (to jest w etapie 3)
+- **Nie tworzyć** dużego nowego subsystemu w engine/ui bez potrzeby
+- **Nie zakładać** że controller focus jest pixel-based bez audytu
+- **Nie optymalizować** przedwcześnie
+
+## Szacowany czas: 1-2 dni (zawężony scope)
 
 ## Next steps
-Implementacja po ukończeniu etapu 1.
+Implementacja po ukończeniu etapu 1, z auditem controller/touch/tooltip contexts.
 
 ## Integration z etapem 1
-Po etapie 1 mamy: `RenderWorldFrame()`, `RenderUiFrame()`, etc.
-Po etapie 2 dodajemy: `UiCoordinateMapper` dostępny w całym UI systemie.
+Po etapie 1 mamy: `RenderWorldPass()`, `RenderWorldOverlays()`, `RenderWindowPanels()`, `RenderTopOverlays()`, `RenderMainHudPanel()`.
+Po etapie 2 dodajemy: `UiHitTesting::ScreenToUiPoint()` dostępny w **in-game** mouse/UI hit-testing.
 
-To tworzy solidny fundament pod etap 3 (actual scaling).
+## Integration z etapem 3
+Etap 2 przygotowuje punkt transformacji.
+Etap 3 nada mu parametr skali i zachowania skalowania.
