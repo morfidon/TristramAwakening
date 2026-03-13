@@ -54,8 +54,8 @@ bool IsPresetSafeForResolution(UiScalePreset preset, int screenWidth, int screen
     // Bounds from actual layout composition path, not just preset metadata
     // GetActualScaledUiBounds() must be based on real phase-3 scaled UI path
     UiBounds scaledBounds = GetActualScaledUiBounds(preset);
-    // Any safety margin must be justified by actual layout/compositing needs, not a hardcoded guess
-    const int margin = 50; // Safety buffer - exact value TBD after testing
+    // Safety margin derived from actual compositing/layout requirements
+    const int margin = GetRequiredSafetyMargin(); // Exact value TBD after testing
     
     return (scaledBounds.width + margin) <= screenWidth && 
            (scaledBounds.height + margin) <= screenHeight;
@@ -84,6 +84,7 @@ Opcja nie jest dropdownem, lecz pozycją cykliczną (Enter / kliknięcie zmienia
 Cykl omija wartości niebezpieczne dla wybranej w menu rozdzielczości (np. na 800x600 kliknięcie w Normal nie robi nic, bo Large jest zablokowane).
 **Cycling should operate over currently safe presets only, or provide lightweight feedback if no larger preset is available.**
 **Avoid "click and nothing happens" interactions.**
+**Preferred behavior: cycle only through currently safe presets.**
 **Follow existing options-menu apply/persist semantics** - nie zakładaj natychmiastowego zapisu.
 
 ## Zmiany w czasie rzeczywistym (Runtime Fallback)
@@ -155,6 +156,7 @@ Test a range of common resolutions:
 - User changes resolution with custom preset
 - Config corruption/migration
 - First-time user (default Normal)
+- **Resize down then resize up: verify effective preset returns to highest safe value consistent with stored preference**
 
 ## Ryzyka
 
