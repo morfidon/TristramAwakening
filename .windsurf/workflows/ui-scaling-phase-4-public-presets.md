@@ -7,7 +7,7 @@ description: Expose UI scaling to users through safe presets
 **Cel:** Udostępnić użytkownikowi **bezpieczny, ograniczony wybór presetów UI scale**, oparty na rzeczywistych ograniczeniach layoutu potwierdzonych po etapie 3.
 
 ## Scope
-* add hidden/internal scale choice to public options UI
+* expose a user-facing UI scale preset in the existing options UI
 * expose a small preset list
 * validate presets against actual phase-3 scaled UI bounds
 * apply safe fallback policy for runtime resolution changes
@@ -22,7 +22,7 @@ description: Expose UI scaling to users through safe presets
 
 ## Kluczowe pliki
 - `Source/options.h / options.cpp` - integracja ze strukturą sgOptions i serializacją do diablo.ini.
-- `options UI implementation files (exact callsites to confirm during implementation)` - podpięcie pozycji w menu Video Options.
+- `options UI implementation files` - podpięcie pozycji w menu Video Options (exact callsites to confirm during implementation).
 - Local helper functions near existing options handling (start small, extract only if needed).
 
 ## Docelowe presety
@@ -33,7 +33,7 @@ enum class UiScalePreset {
     Larger      // Largest scale (exact % TBD after phase 3 fit testing)
 };
 
-// Helper functions (start small, local):
+// Helper functions (start local, extract only if reusable):
 static float GetScaleValue(UiScalePreset preset);
 static const char* GetPresetName(UiScalePreset preset);
 static bool IsPresetSafeForResolution(UiScalePreset preset, int screenWidth, int screenHeight);
@@ -55,7 +55,7 @@ bool IsPresetSafeForResolution(UiScalePreset preset, int screenWidth, int screen
     // GetActualScaledUiBounds() must be based on real phase-3 scaled UI path
     UiBounds scaledBounds = GetActualScaledUiBounds(preset);
     // Safety margin derived from actual compositing/layout requirements
-    const int margin = GetRequiredSafetyMargin(); // Exact value TBD after testing
+    const int margin = GetRequiredSafetyMargin(); // Value determined after phase-3 testing
     
     return (scaledBounds.width + margin) <= screenWidth && 
            (scaledBounds.height + margin) <= screenHeight;
@@ -81,11 +81,13 @@ bool IsPresetSafeForResolution(UiScalePreset preset, int screenWidth, int screen
 
 ## Zasady interakcji (Zgodnie z konwencją DevilutionX):
 Opcja nie jest dropdownem, lecz pozycją cykliczną (Enter / kliknięcie zmienia na następną wartość).
-Cykl omija wartości niebezpieczne dla wybranej w menu rozdzielczości (np. na 800x600 kliknięcie w Normal nie robi nic, bo Large jest zablokowane).
-**Cycling should operate over currently safe presets only, or provide lightweight feedback if no larger preset is available.**
+**Cycle over currently safe presets based on the resolution that will actually be applied by the menu flow.**
+**Cycling should operate over currently safe presets only.**
+**Preferred UX behavior: cycle only through currently safe presets (skip unsafe values).**
 **Avoid "click and nothing happens" interactions.**
-**Preferred behavior: cycle only through currently safe presets.**
 **Follow existing options-menu apply/persist semantics** - nie zakładaj natychmiastowego zapisu.
+
+**UI clarity requirement:** The options UI should make clear which value is currently selected by the user, even if runtime fallback temporarily applies a smaller effective preset.
 
 ## Zmiany w czasie rzeczywistym (Runtime Fallback)
 
